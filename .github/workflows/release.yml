@@ -56,7 +56,8 @@ jobs:
 
       - name: Pin Superset
         run: |
-          python tools/pin_superset.py --latest-tag --write-version
+          # Use specific Superset release tag for stability
+          python tools/pin_superset.py --sha 6.0.0 --write-version
 
       - name: Cache npm dependencies
         uses: actions/cache@v4
