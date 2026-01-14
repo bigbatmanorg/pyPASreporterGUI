@@ -22,7 +22,7 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
-def build_wheel(package_dir: Path, output_dir: Path, package_name: str) -> Path | None:
+def build_wheel(package_dir: Path, output_dir: Path, package_name: str) -> list[Path]:
     """Build a wheel for a Python package.
 
     Args:
@@ -31,7 +31,7 @@ def build_wheel(package_dir: Path, output_dir: Path, package_name: str) -> Path 
         package_name: Expected package name (for identification)
 
     Returns:
-        Path to built wheel, or None if skipped
+        List of paths to built wheels (can be multiple or empty)
     """
     print(f"\n{'='*60}")
     print(f"Building wheel: {package_name}")
@@ -42,41 +42,50 @@ def build_wheel(package_dir: Path, output_dir: Path, package_name: str) -> Path 
 
     if not pyproject.exists() and not setup_py.exists():
         print(f"Warning: No pyproject.toml or setup.py in {package_dir}, skipping")
-        return None
+        return []
 
     # Record existing wheels before build
     existing_wheels = set(output_dir.glob("*.whl"))
 
-    # Clean previous builds
-    for pattern in ["build", "*.egg-info", "dist"]:
+    # Clean previous builds in package directory (but not output_dir)
+    for pattern in ["build", "*.egg-info"]:
         for path in package_dir.glob(pattern):
             if path.is_dir():
                 shutil.rmtree(path)
+    
+    # Clean dist only in package_dir, but NEVER delete output_dir or its parent
+    pkg_dist = package_dir / "dist"
+    if pkg_dist.exists():
+        # Resolve both paths to compare properly
+        pkg_dist_resolved = pkg_dist.resolve()
+        output_dir_resolved = output_dir.resolve()
+        # Don't delete if it's the output directory or its parent
+        if (pkg_dist_resolved != output_dir_resolved and 
+            pkg_dist_resolved != output_dir_resolved.parent and
+            not str(output_dir_resolved).startswith(str(pkg_dist_resolved))):
+            shutil.rmtree(pkg_dist)
 
     # Build wheel using uv or pip
     uv_available = subprocess.run(["uv", "--version"], capture_output=True).returncode == 0
 
-    if uv_available:
-        run(["uv", "build", "--wheel", "--out-dir", str(output_dir)], cwd=package_dir)
-    else:
-        run(["python", "-m", "build", "--wheel", "--outdir", str(output_dir)], cwd=package_dir)
+    try:
+        if uv_available:
+            run(["uv", "build", "--wheel", "--out-dir", str(output_dir)], cwd=package_dir)
+        else:
+            run(["python", "-m", "build", "--wheel", "--outdir", str(output_dir)], cwd=package_dir)
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: Build failed for {package_name}: {e}")
+        return []
 
-    # Find newly created wheel
-    new_wheels = set(output_dir.glob("*.whl")) - existing_wheels
+    # Find newly created wheels
+    new_wheels = list(set(output_dir.glob("*.whl")) - existing_wheels)
     if new_wheels:
-        wheel = max(new_wheels, key=lambda p: p.stat().st_mtime)
-        print(f"✓ Built: {wheel.name}")
-        return wheel
+        for wheel in new_wheels:
+            print(f"✓ Built: {wheel.name}")
+        return new_wheels
 
-    # Fallback: search by package name pattern
-    normalized = package_name.lower().replace("-", "_")
-    for wheel in output_dir.glob("*.whl"):
-        if normalized in wheel.name.lower():
-            print(f"✓ Found: {wheel.name}")
-            return wheel
-
-    print(f"Warning: No wheel found for {package_name}")
-    return None
+    print(f"Warning: No new wheel found for {package_name}")
+    return []
 
 
 def main() -> int:
@@ -103,28 +112,29 @@ def main() -> int:
             print("Run: python tools/pin_superset.py first")
             return 1
 
-        # Check for sub-packages first (newer Superset versions)
+        # Build main Superset package first
+        wheels = build_wheel(superset_src, output_dir, "apache-superset")
+        built_wheels.extend(wheels)
+
+        # Check for sub-packages (newer Superset versions may have these)
         sub_packages = [
             (superset_src / "superset-core", "apache-superset-core"),
             (superset_src / "superset-extensions-cli", "superset-extensions-cli"),
         ]
 
         for pkg_dir, pkg_name in sub_packages:
-            if pkg_dir.exists():
-                wheel = build_wheel(pkg_dir, output_dir, pkg_name)
-                if wheel:
-                    built_wheels.append(wheel)
-
-        # Build main Superset package
-        wheel = build_wheel(superset_src, output_dir, "apache-superset")
-        if wheel:
-            built_wheels.append(wheel)
+            # Only build if it has its own pyproject.toml/setup.py
+            if pkg_dir.exists() and (
+                (pkg_dir / "pyproject.toml").exists() or 
+                (pkg_dir / "setup.py").exists()
+            ):
+                wheels = build_wheel(pkg_dir, output_dir, pkg_name)
+                built_wheels.extend(wheels)
 
     # Build pyPASreporterGUI wheel
     if not args.superset_only:
-        wheel = build_wheel(base_dir, output_dir, "pyPASreporterGUI")
-        if wheel:
-            built_wheels.append(wheel)
+        wheels = build_wheel(base_dir, output_dir, "pyPASreporterGUI")
+        built_wheels.extend(wheels)
 
     # Summary
     print(f"\n{'='*60}")
@@ -132,18 +142,28 @@ def main() -> int:
     print(f"{'='*60}")
     print(f"Output directory: {output_dir}")
     print()
-    print("Built wheels:")
-    for wheel in built_wheels:
-        size_mb = wheel.stat().st_size / (1024 * 1024)
-        print(f"  📦 {wheel.name} ({size_mb:.1f} MB)")
+    
+    # Show all wheels in output directory
+    all_wheels = list(output_dir.glob("*.whl"))
+    if all_wheels:
+        print("Wheels in output directory:")
+        for wheel in sorted(all_wheels):
+            try:
+                size_mb = wheel.stat().st_size / (1024 * 1024)
+                print(f"  📦 {wheel.name} ({size_mb:.1f} MB)")
+            except FileNotFoundError:
+                print(f"  📦 {wheel.name} (file missing)")
+    else:
+        print("No wheels found in output directory!")
+        return 1
 
     print()
     print("Installation commands:")
     print(f"  # Standard install:")
-    print(f"  pip install {output_dir / 'pyPASreporterGUI-*.whl'}")
+    print(f"  pip install {output_dir}/*.whl")
     print()
     print(f"  # Offline install:")
-    print(f"  pip install --no-index --find-links {output_dir} pyPASreporterGUI")
+    print(f"  pip install --no-index --find-links {output_dir} pypasreportergui")
 
     return 0
 

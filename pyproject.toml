@@ -28,7 +28,7 @@ classifiers = [
 ]
 keywords = ["superset", "analytics", "visualization", "duckdb", "dashboard"]
 dependencies = [
-    "apache-superset>=4.0.0",
+    "apache-superset",
     "typer>=0.9.0",
     "rich>=13.0.0",
     "duckdb>=0.10.0",
