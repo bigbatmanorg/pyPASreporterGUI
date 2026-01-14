@@ -252,6 +252,11 @@ SUPERSET_LOAD_EXAMPLES = False
     return config_path
 
 
+def is_frozen() -> bool:
+    """Check if running as a PyInstaller bundle."""
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+
+
 def run_superset_command(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
     """Run a Superset CLI command.
 
@@ -260,12 +265,57 @@ def run_superset_command(args: list[str], check: bool = True) -> subprocess.Comp
         check: If True, raise on non-zero exit code
 
     Returns:
-        CompletedProcess instance
+        CompletedProcess instance (or simulated one for frozen apps)
     """
-    # Use the same Python interpreter to run superset CLI
-    cmd = [sys.executable, "-m", "superset.cli.main"] + args
-    print(f"+ {' '.join(cmd)}")
-    return subprocess.run(cmd, check=check)
+    if is_frozen():
+        # In a PyInstaller bundle, we must call Superset's CLI directly
+        # because sys.executable is the bundle, not Python
+        return _run_superset_command_frozen(args, check)
+    else:
+        # Normal Python execution - use subprocess
+        cmd = [sys.executable, "-m", "superset.cli.main"] + args
+        print(f"+ {' '.join(cmd)}")
+        return subprocess.run(cmd, check=check)
+
+
+def _run_superset_command_frozen(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
+    """Run Superset CLI command directly when frozen (PyInstaller).
+
+    This imports and calls Superset's CLI functions directly instead of
+    spawning a subprocess, since sys.executable is the bundle itself.
+    """
+    import click
+    from click.testing import CliRunner
+    from superset.cli.main import superset as superset_cli
+
+    print(f"+ [frozen] superset {' '.join(args)}")
+
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(superset_cli, args, catch_exceptions=False)
+
+    # Print output
+    if result.output:
+        print(result.output, end='')
+    if result.stderr_bytes:
+        print(result.stderr_bytes.decode('utf-8', errors='replace'), end='', file=sys.stderr)
+
+    # Create a CompletedProcess-like result
+    completed = subprocess.CompletedProcess(
+        args=["superset"] + args,
+        returncode=result.exit_code,
+        stdout=result.output,
+        stderr=result.stderr_bytes.decode('utf-8', errors='replace') if result.stderr_bytes else '',
+    )
+
+    if check and result.exit_code != 0:
+        raise subprocess.CalledProcessError(
+            result.exit_code,
+            ["superset"] + args,
+            output=result.output,
+            stderr=completed.stderr,
+        )
+
+    return completed
 
 
 def init_database() -> None:
@@ -309,20 +359,53 @@ def run_superset_server(
     debug: bool = False,
 ) -> None:
     """Start the Superset development server."""
-    cmd = [
-        "run",
-        "-h", host,
-        "-p", str(port),
-        "--with-threads",
-    ]
+    if is_frozen():
+        # In frozen mode, run the Flask app directly
+        _run_superset_server_frozen(host, port, debug)
+    else:
+        # Normal mode - use subprocess
+        cmd = [
+            "run",
+            "-h", host,
+            "-p", str(port),
+            "--with-threads",
+        ]
 
-    if reload:
-        cmd.append("--reload")
+        if reload:
+            cmd.append("--reload")
 
-    if debug:
-        cmd.append("--debugger")
+        if debug:
+            cmd.append("--debugger")
 
-    run_superset_command(cmd)
+        run_superset_command(cmd)
+
+
+def _run_superset_server_frozen(
+    host: str = "127.0.0.1",
+    port: int = 8088,
+    debug: bool = False,
+) -> None:
+    """Run Superset server directly when frozen (PyInstaller)."""
+    from superset.app import create_app
+
+    # Create the Flask application
+    app = create_app()
+
+    # Register our branding blueprint
+    try:
+        from pypasreportergui.branding.blueprint import branding_bp
+        app.register_blueprint(branding_bp)
+    except Exception as e:
+        print(f"Warning: Could not register branding blueprint: {e}")
+
+    # Run with the built-in Flask server (threaded for better performance)
+    app.run(
+        host=host,
+        port=port,
+        debug=debug,
+        threaded=True,
+        use_reloader=False,  # Reloader doesn't work in frozen apps
+    )
 
 
 def get_superset_env() -> dict:

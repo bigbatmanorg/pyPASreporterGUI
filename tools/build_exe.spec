@@ -53,6 +53,7 @@ hiddenimports = [
     "typer",
     "typer.main",
     "click",
+    "click.testing",  # Needed for frozen CLI execution
     "rich",
     "rich.console",
     "rich.table",
@@ -82,6 +83,7 @@ hiddenimports = [
     "superset.app",
     "superset.config",
     "superset.cli",
+    "superset.cli.main",  # Needed for frozen CLI execution
     "superset.views",
     "superset.models",
     "superset.connectors",
