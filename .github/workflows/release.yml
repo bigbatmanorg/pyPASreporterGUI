@@ -21,7 +21,7 @@ permissions:
 
 env:
   PYTHON_VERSION: '3.11'
-  NODE_VERSION: '16'
+  NODE_VERSION: '18'
   SUPERSET_SHA: ''  # Will be set by pin_superset.py
 
 jobs:
@@ -73,6 +73,7 @@ jobs:
         run: |
           cd superset-src/superset-frontend
           npm ci
+          # Superset 6.0.0+ uses modern tooling that works with Node 18 without legacy openssl
           npm run build
 
       - name: Build Superset Wheel
