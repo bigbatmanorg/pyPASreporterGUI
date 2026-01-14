@@ -281,41 +281,114 @@ def run_superset_command(args: list[str], check: bool = True) -> subprocess.Comp
 def _run_superset_command_frozen(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
     """Run Superset CLI command directly when frozen (PyInstaller).
 
-    This imports and calls Superset's CLI functions directly instead of
-    spawning a subprocess, since sys.executable is the bundle itself.
+    This calls Superset's functions directly instead of using the CLI,
+    because the CLI's dynamic command discovery doesn't work in frozen apps.
     """
-    import click
-    from click.testing import CliRunner
-    from superset.cli.main import superset as superset_cli
-
     print(f"+ [frozen] superset {' '.join(args)}")
 
-    runner = CliRunner(mix_stderr=False)
-    result = runner.invoke(superset_cli, args, catch_exceptions=False)
+    exit_code = 0
+    output = ""
 
-    # Print output
-    if result.output:
-        print(result.output, end='')
-    if result.stderr_bytes:
-        print(result.stderr_bytes.decode('utf-8', errors='replace'), end='', file=sys.stderr)
+    try:
+        # Import within function to delay until needed
+        from superset.app import create_app
+        
+        app = create_app()
 
-    # Create a CompletedProcess-like result
-    completed = subprocess.CompletedProcess(
+        with app.app_context():
+            if args == ["db", "upgrade"]:
+                # Run database migrations
+                from flask_migrate import upgrade as db_upgrade
+                db_upgrade()
+                output = "Database upgrade completed successfully.\n"
+
+            elif args == ["init"]:
+                # Initialize Superset (permissions, roles)
+                from superset import appbuilder, security_manager
+                from superset.utils.decorators import transaction
+
+                @transaction()
+                def _init():
+                    appbuilder.add_permissions(update_perms=True)
+                    security_manager.sync_role_definitions()
+
+                _init()
+                output = "Superset initialized successfully.\n"
+
+            elif args[0] == "fab" and args[1] == "create-admin":
+                # Parse create-admin arguments
+                from superset import security_manager as sm
+                from superset.extensions import db
+
+                # Parse args: fab create-admin --username X --firstname Y --lastname Z --email E --password P
+                params = {}
+                i = 2
+                while i < len(args):
+                    if args[i] == "--username":
+                        params["username"] = args[i + 1]
+                        i += 2
+                    elif args[i] == "--firstname":
+                        params["first_name"] = args[i + 1]
+                        i += 2
+                    elif args[i] == "--lastname":
+                        params["last_name"] = args[i + 1]
+                        i += 2
+                    elif args[i] == "--email":
+                        params["email"] = args[i + 1]
+                        i += 2
+                    elif args[i] == "--password":
+                        params["password"] = args[i + 1]
+                        i += 2
+                    else:
+                        i += 1
+
+                # Check if user exists
+                existing = sm.find_user(username=params.get("username"))
+                if existing:
+                    output = f"User '{params.get('username')}' already exists.\n"
+                else:
+                    # Get the Admin role
+                    admin_role = sm.find_role("Admin")
+                    if not admin_role:
+                        admin_role = sm.add_role("Admin")
+
+                    # Create the user
+                    user = sm.add_user(
+                        username=params.get("username"),
+                        first_name=params.get("first_name", "Admin"),
+                        last_name=params.get("last_name", "User"),
+                        email=params.get("email"),
+                        role=admin_role,
+                        password=params.get("password"),
+                    )
+                    if user:
+                        db.session.commit()
+                        output = f"Admin user '{params.get('username')}' created successfully.\n"
+                    else:
+                        output = f"Failed to create admin user.\n"
+                        exit_code = 1
+
+            elif args[0] == "run":
+                # This should be handled by _run_superset_server_frozen
+                raise RuntimeError("Use _run_superset_server_frozen for 'run' command")
+
+            else:
+                raise NotImplementedError(f"Frozen command not implemented: {args}")
+
+    except Exception as e:
+        output = f"Error: {e}\n"
+        exit_code = 1
+        if check:
+            raise
+
+    print(output, end='')
+
+    return subprocess.CompletedProcess(
         args=["superset"] + args,
-        returncode=result.exit_code,
-        stdout=result.output,
-        stderr=result.stderr_bytes.decode('utf-8', errors='replace') if result.stderr_bytes else '',
+        returncode=exit_code,
+        stdout=output,
+        stderr='',
     )
-
-    if check and result.exit_code != 0:
-        raise subprocess.CalledProcessError(
-            result.exit_code,
-            ["superset"] + args,
-            output=result.output,
-            stderr=completed.stderr,
-        )
-
-    return completed
 
 
 def init_database() -> None:

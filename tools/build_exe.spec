@@ -78,6 +78,17 @@ hiddenimports = [
     "jinja2",
     "werkzeug",
     
+    # Alembic (database migrations)
+    "alembic",
+    "alembic.config",
+    "alembic.script",
+    "alembic.runtime",
+    "alembic.runtime.migration",
+    "alembic.command",
+    "alembic.operations",
+    "alembic.ddl",
+    "alembic.ddl.impl",
+    
     # Superset (main modules)
     "superset",
     "superset.app",
