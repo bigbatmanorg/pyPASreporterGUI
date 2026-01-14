@@ -149,6 +149,12 @@ hiddenimports = [
     "numpy",
     "sqlparse",
     
+    # Image processing (required for screenshots)
+    "PIL",
+    "PIL.Image",
+    "PIL.ImageDraw",
+    "PIL.ImageFont",
+    
     # Other common dependencies
     "email_validator",
     "marshmallow",
@@ -167,7 +173,6 @@ a = Analysis(
     excludes=[
         # Exclude unnecessary large packages
         "matplotlib",
-        "PIL",
         "tkinter",
         "test",
         "tests",
