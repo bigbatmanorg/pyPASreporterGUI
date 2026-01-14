@@ -32,12 +32,15 @@ pypasreportergui run --port 8088
 **Windows (PowerShell):**
 ```powershell
 cd pyPASreporterGUI
-.\tools\prereqs.ps1 -UseConda:$false
+.\tools\prereqs.ps1
 .\.venv\Scripts\Activate.ps1
 
 python scripts\build_all.py
+pypasreportergui init
 pypasreportergui run --port 8088
 ```
+
+> **Windows Notes:** The prereqs script auto-installs Node.js via conda if not found. If you encounter `python-geohash` build errors, run `conda install -y -c conda-forge python-geohash` before the build.
 
 ### Installation (from wheel)
 

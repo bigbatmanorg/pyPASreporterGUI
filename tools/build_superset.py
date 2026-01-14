@@ -31,7 +31,9 @@ def venv_env(base_dir: Path) -> dict[str, str]:
 def run(cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     """Run a command and check for errors."""
     print(f"+ {' '.join(cmd)}")
-    subprocess.run(cmd, cwd=cwd, check=True, env=env)
+    # Use shell=True on Windows for commands like npm which are actually .cmd files
+    use_shell = os.name == "nt" and cmd and cmd[0] in ("npm", "npx", "node")
+    subprocess.run(cmd, cwd=cwd, check=True, env=env, shell=use_shell)
 
 
 def read_version_matrix(base_dir: Path) -> dict:

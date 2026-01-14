@@ -75,6 +75,10 @@ def generate_config(home_dir: Path, force: bool = False) -> Path:
     # Get branding static directory (for blueprint)
     branding_static = get_branding_static_dir()
 
+    # Convert paths to forward slashes for cross-platform config (Python strings)
+    home_dir_str = str(home_dir).replace("\\", "/")
+    branding_static_str = str(branding_static).replace("\\", "/")
+
     config_content = f'''# pyPASreporterGUI Superset Configuration
 # Generated automatically - edit with care
 # Version: {__version__}
@@ -100,7 +104,7 @@ FLASK_USE_RELOAD = True
 # =============================================================================
 # Database Configuration (SQLite - no Postgres required)
 # =============================================================================
-SQLALCHEMY_DATABASE_URI = "sqlite:///{home_dir}/superset.db?check_same_thread=false"
+SQLALCHEMY_DATABASE_URI = "sqlite:///{home_dir_str}/superset.db?check_same_thread=false"
 
 # =============================================================================
 # Feature Flags
@@ -121,28 +125,28 @@ FEATURE_FLAGS = {{
 # =============================================================================
 CACHE_CONFIG = {{
     "CACHE_TYPE": "FileSystemCache",
-    "CACHE_DIR": "{home_dir}/cache",
+    "CACHE_DIR": "{home_dir_str}/cache",
     "CACHE_DEFAULT_TIMEOUT": 300,
     "CACHE_THRESHOLD": 100,
 }}
 
 DATA_CACHE_CONFIG = {{
     "CACHE_TYPE": "FileSystemCache",
-    "CACHE_DIR": "{home_dir}/data_cache",
+    "CACHE_DIR": "{home_dir_str}/data_cache",
     "CACHE_DEFAULT_TIMEOUT": 86400,  # 24 hours
     "CACHE_THRESHOLD": 100,
 }}
 
 FILTER_STATE_CACHE_CONFIG = {{
     "CACHE_TYPE": "FileSystemCache",
-    "CACHE_DIR": "{home_dir}/filter_cache",
+    "CACHE_DIR": "{home_dir_str}/filter_cache",
     "CACHE_DEFAULT_TIMEOUT": 86400,
     "CACHE_THRESHOLD": 100,
 }}
 
 EXPLORE_FORM_DATA_CACHE_CONFIG = {{
     "CACHE_TYPE": "FileSystemCache",
-    "CACHE_DIR": "{home_dir}/explore_cache",
+    "CACHE_DIR": "{home_dir_str}/explore_cache",
     "CACHE_DEFAULT_TIMEOUT": 86400,
     "CACHE_THRESHOLD": 100,
 }}
@@ -177,7 +181,7 @@ DISPLAY_MAX_ROW = 10000
 # =============================================================================
 # Upload Configuration
 # =============================================================================
-UPLOAD_FOLDER = "{home_dir}/uploads"
+UPLOAD_FOLDER = "{home_dir_str}/uploads"
 ALLOWED_EXTENSIONS = {{"csv", "xlsx", "xls", "json", "parquet"}}
 
 # =============================================================================
@@ -186,7 +190,7 @@ ALLOWED_EXTENSIONS = {{"csv", "xlsx", "xls", "json", "parquet"}}
 LOG_LEVEL = "INFO"
 ENABLE_TIME_ROTATE = True
 TIME_ROTATE_LOG_LEVEL = "INFO"
-FILENAME = "{home_dir}/logs/superset.log"
+FILENAME = "{home_dir_str}/logs/superset.log"
 
 # =============================================================================
 # Blueprint Registration (for custom branding)
@@ -199,7 +203,7 @@ def FLASK_APP_MUTATOR(app):
     except ImportError:
         # Fallback: serve static files directly
         import os
-        branding_dir = "{branding_static}"
+        branding_dir = "{branding_static_str}"
         if os.path.isdir(branding_dir):
             from flask import send_from_directory
             @app.route("/pypasreportergui_static/<path:filename>")
@@ -258,7 +262,8 @@ def run_superset_command(args: list[str], check: bool = True) -> subprocess.Comp
     Returns:
         CompletedProcess instance
     """
-    cmd = ["superset"] + args
+    # Use the same Python interpreter to run superset CLI
+    cmd = [sys.executable, "-m", "superset.cli.main"] + args
     print(f"+ {' '.join(cmd)}")
     return subprocess.run(cmd, check=check)
 

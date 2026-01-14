@@ -68,6 +68,7 @@ VERSION_MATRIX.json
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+.build_exe_env
 
 # Jupyter
 .ipynb_checkpoints/

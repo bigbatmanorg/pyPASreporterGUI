@@ -21,7 +21,9 @@ from pathlib import Path
 
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
     """Run a command and return the result."""
-    return subprocess.run(cmd, cwd=cwd, check=check, text=True, capture_output=True)
+    # Use shell=True on Windows for commands like npm which are actually .cmd files
+    use_shell = os.name == "nt" and cmd and cmd[0] in ("npm", "npx", "node")
+    return subprocess.run(cmd, cwd=cwd, check=check, text=True, capture_output=True, shell=use_shell)
 
 
 def git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
@@ -237,7 +239,7 @@ def main() -> int:
             "node_version": get_version(["node", "--version"]),
             "npm_version": get_version(["npm", "--version"]),
             "app_version": app_version,
-            "build_timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "build_timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
             "build_host": platform.node(),
         }
         write_version_matrix(base_dir, data)

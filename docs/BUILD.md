@@ -105,7 +105,7 @@ Sets up the development environment:
 - Creates `.venv` virtual environment
 - Installs `uv` package manager
 - Installs DuckDB, Typer, Rich, and other dependencies
-- Ensures Node.js and npm are available
+- Ensures Node.js and npm are available (auto-installs via conda if missing on Windows)
 
 **Environment Variables:**
 | Variable | Default | Description |
@@ -114,6 +114,10 @@ Sets up the development environment:
 | `CONDA_ENV` | `pypasreportergui` | Conda environment name |
 | `PY_VERSION` | `3.11` | Python version |
 | `PYTHON_BIN` | auto | Python interpreter path |
+
+**Windows Notes:**
+- If Node.js is not found, the script attempts to install it via `conda install -c conda-forge nodejs=20`
+- Requires conda to be available in PATH for auto-installation
 
 ---
 
@@ -305,6 +309,22 @@ cd superset-src/superset-frontend
 rm -rf node_modules
 npm ci
 npm run build
+```
+
+### Windows: npm/node Commands Fail
+
+On Windows, subprocess calls to `npm`, `node`, or `npx` require `shell=True` because they are `.cmd` wrapper scripts. This is already handled in the build scripts, but if you're writing custom scripts:
+
+```python
+subprocess.run(["npm", "ci"], shell=(os.name == "nt"))
+```
+
+### Windows: python-geohash Build Failure
+
+If you see `error: Microsoft Visual C++ 14.0 or greater is required`, install via conda instead:
+
+```powershell
+conda install -y -c conda-forge python-geohash
 ```
 
 ### Wheel Build Fails

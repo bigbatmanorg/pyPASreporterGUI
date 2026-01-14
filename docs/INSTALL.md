@@ -55,20 +55,25 @@ Open your browser to http://127.0.0.1:8088 and login with `admin`/`admin`.
 git clone https://github.com/yourorg/pyPASreporterGUI.git
 cd pyPASreporterGUI
 
-# Run prerequisites script
-.\tools\prereqs.ps1 -UseConda:$false
+# Run prerequisites script (auto-installs Node.js via conda if needed)
+.\tools\prereqs.ps1
 
 # Activate virtual environment
 .\.venv\Scripts\Activate.ps1
 
-# Build everything
+# Build everything (frontend takes ~10-15 minutes)
 python scripts\build_all.py
+
+# Initialize database and admin user
+pypasreportergui init
 
 # Start the application
 pypasreportergui run --port 8088
 ```
 
 Open your browser to http://127.0.0.1:8088 and login with `admin`/`admin`.
+
+> **Note:** If Node.js is not found, the prereqs script will attempt to install it via conda. If conda is not available, install Node.js 18+ manually from https://nodejs.org/ or via `conda install -c conda-forge nodejs=20`.
 
 ---
 

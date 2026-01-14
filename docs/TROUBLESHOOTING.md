@@ -27,12 +27,16 @@ python --version
 
 **Solution:**
 ```bash
-# Install Node.js 18+ from https://nodejs.org/
-# Or use nvm:
-nvm install 18
-nvm use 18
+# Option 1: Install via conda (recommended for Windows)
+conda install -y -c conda-forge nodejs=20
 
-# Upgrade npm
+# Option 2: Install Node.js 18+ from https://nodejs.org/
+
+# Option 3: Use nvm (Linux/macOS)
+nvm install 20
+nvm use 20
+
+# Upgrade npm (if needed)
 npm install -g npm@latest
 ```
 
@@ -131,12 +135,18 @@ pip install uv
 
 **Solution:**
 ```bash
-# Ensure venv is activated
+# Linux/macOS: Ensure venv is activated
 source .venv/bin/activate
 
+# Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
+
 # Verify superset is installed
-which superset
-# Should show: /path/to/.venv/bin/superset
+which superset      # Linux/macOS
+Get-Command superset  # Windows
+
+# Alternative: Run via Python module directly
+python -m superset.cli.main run -h 127.0.0.1 -p 8088
 ```
 
 **Problem:** `SECRET_KEY must be set`
@@ -287,6 +297,35 @@ pip install duckdb duckdb-engine
 ---
 
 ## Windows-Specific Issues
+
+### python-geohash Build Failure
+
+**Problem:** `error: Microsoft Visual C++ 14.0 or greater is required`
+
+This occurs because `python-geohash` has no pre-built wheel for Windows.
+
+**Solutions:**
+
+1. **Install via conda (recommended):**
+   ```powershell
+   conda install -y -c conda-forge python-geohash
+   ```
+
+2. **Install Microsoft Visual C++ Build Tools:**
+   - Download from https://visualstudio.microsoft.com/visual-cpp-build-tools/
+   - Select "Desktop development with C++" workload
+   - Retry the build
+
+### Node.js/npm Commands Fail in Build
+
+**Problem:** `npm` or `node` commands fail with "not found" even though they work in terminal
+
+On Windows, `npm` and `node` are `.cmd` wrapper scripts that require `shell=True` in subprocess calls.
+
+**Solution:** This is fixed in the build scripts. If you encounter this with custom scripts, use:
+```python
+subprocess.run(["npm", "..."], shell=(os.name == "nt"))
+```
 
 ### Path Too Long
 

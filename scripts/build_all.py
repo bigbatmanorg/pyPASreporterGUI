@@ -64,21 +64,21 @@ def check_prerequisites(base_dir: Path) -> bool:
 
     # Check Node.js
     try:
-        result = subprocess.run(["node", "--version"], capture_output=True, text=True)
+        result = subprocess.run(["node", "--version"], capture_output=True, text=True, shell=(os.name == "nt"))
         print(f"✓ Node.js: {result.stdout.strip()}")
     except Exception:
         issues.append("Node.js not found. Install Node.js 18+")
 
     # Check npm
     try:
-        result = subprocess.run(["npm", "--version"], capture_output=True, text=True)
+        result = subprocess.run(["npm", "--version"], capture_output=True, text=True, shell=(os.name == "nt"))
         print(f"✓ npm: {result.stdout.strip()}")
     except Exception:
         issues.append("npm not found. Install Node.js with npm")
 
     # Check Git
     try:
-        result = subprocess.run(["git", "--version"], capture_output=True, text=True)
+        result = subprocess.run(["git", "--version"], capture_output=True, text=True, shell=(os.name == "nt"))
         print(f"✓ Git: {result.stdout.strip()}")
     except Exception:
         issues.append("git not found. Install Git")

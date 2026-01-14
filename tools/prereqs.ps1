@@ -131,10 +131,25 @@ function Ensure-Npm {
     $env:PATH = "$env:USERPROFILE\.npm-global\bin;$env:PATH"
 }
 
-# Check Node.js version
+# Check Node.js version (install via conda if missing)
 function Check-Node {
     if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-        Error "node not found. Install Node.js 18+ first."
+        Log "node not found. Attempting to install via conda..."
+        if (Get-Command conda -ErrorAction SilentlyContinue) {
+            try {
+                & conda install -y -c conda-forge nodejs=20
+                # Refresh PATH to find newly installed node
+                $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+            } catch {
+                Error "Failed to install Node.js via conda: $_"
+            }
+        } else {
+            Error "node not found and conda not available. Install Node.js 18+ manually or install conda."
+        }
+    }
+
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Error "node still not found after installation attempt. Please restart your terminal or install Node.js 18+ manually."
     }
 
     $nodeVersion = (node --version) -replace 'v', ''
@@ -142,7 +157,12 @@ function Check-Node {
 
     $major = [int]($nodeVersion.Split('.')[0])
     if ($major -lt 18) {
-        Error "Node.js 18+ required, found $nodeVersion"
+        Log "Node.js 18+ required, found $nodeVersion. Attempting upgrade via conda..."
+        if (Get-Command conda -ErrorAction SilentlyContinue) {
+            & conda install -y -c conda-forge nodejs=20
+        } else {
+            Error "Node.js 18+ required, found $nodeVersion. Please upgrade manually."
+        }
     }
 }
 
@@ -152,21 +172,24 @@ function Install-Packages {
 
     . "$Root\.venv\Scripts\Activate.ps1"
 
-    $pkgInstaller = { param($args) python -m pip @args }
-    if (Get-Command uv -ErrorAction SilentlyContinue) {
+    $useUv = Get-Command uv -ErrorAction SilentlyContinue
+    if ($useUv) {
         uv pip install --upgrade pip setuptools wheel build
-        $pkgInstaller = { param($args) uv pip @args }
+        # Install core dependencies
+        uv pip install "duckdb>=0.10.0" "duckdb-engine>=0.10.0"
+        uv pip install "typer>=0.9.0" "rich>=13.0.0"
+        uv pip install "requests>=2.28.0"
+        # Install dev dependencies
+        uv pip install "pytest>=7.0.0" "pytest-cov>=4.0.0"
     } else {
         python -m pip install --upgrade pip setuptools wheel build
+        # Install core dependencies
+        python -m pip install "duckdb>=0.10.0" "duckdb-engine>=0.10.0"
+        python -m pip install "typer>=0.9.0" "rich>=13.0.0"
+        python -m pip install "requests>=2.28.0"
+        # Install dev dependencies
+        python -m pip install "pytest>=7.0.0" "pytest-cov>=4.0.0"
     }
-
-    # Install core dependencies
-    & $pkgInstaller "install" "duckdb>=0.10.0" "duckdb-engine>=0.10.0"
-    & $pkgInstaller "install" "typer>=0.9.0" "rich>=13.0.0"
-    & $pkgInstaller "install" "requests>=2.28.0"
-
-    # Install dev dependencies
-    & $pkgInstaller "install" "pytest>=7.0.0" "pytest-cov>=4.0.0"
 }
 
 # Main
