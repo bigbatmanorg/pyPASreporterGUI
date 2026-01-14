@@ -195,12 +195,18 @@ jobs:
           retention-days: 7
 
   # =============================================================================
-  # Build Windows Executable
+  # Build Windows Executable (DISABLED - troubleshooting Linux first)
   # =============================================================================
+  # build-windows-exe:
+  #   name: Build Windows Executable
+  #   runs-on: windows-latest
+  #   needs: build-superset
+  #   if: false  # Disabled for now
   build-windows-exe:
     name: Build Windows Executable
     runs-on: windows-latest
     needs: build-superset
+    if: false  # DISABLED - troubleshooting Linux first
     
     steps:
       - name: Checkout repository
@@ -269,7 +275,7 @@ jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-superset, build-linux-exe, build-windows-exe]
+    needs: [build-superset, build-linux-exe]  # Removed build-windows-exe for now
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
     
     steps:
@@ -290,7 +296,7 @@ jobs:
           
           # Copy executables
           cp artifacts/linux-executable/*.tar.gz release-assets/ || true
-          cp artifacts/windows-executable/*.zip release-assets/ || true
+          # cp artifacts/windows-executable/*.zip release-assets/ || true  # Disabled
           
           echo "=== Release Assets ==="
           ls -la release-assets/
