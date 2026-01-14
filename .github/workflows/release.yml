@@ -74,7 +74,7 @@ jobs:
           npm ci
           npm run build
         env:
-          NODE_OPTIONS: '--max-old-space-size=4096'
+          NODE_OPTIONS: '--max-old-space-size=4096 --openssl-legacy-provider'
 
       - name: Build Superset Wheel
         run: |
