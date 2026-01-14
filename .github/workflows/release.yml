@@ -1,0 +1,350 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: 'Release name (e.g., v0.1.0)'
+        required: false
+        default: 'dev-build'
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '20'
+  SUPERSET_SHA: ''  # Will be set by pin_superset.py
+
+jobs:
+  # =============================================================================
+  # Build Frontend & Backend (shared artifact for all platforms)
+  # =============================================================================
+  build-superset:
+    name: Build Superset Frontend & Wheels
+    runs-on: ubuntu-latest
+    outputs:
+      superset_version: ${{ steps.version.outputs.superset_version }}
+      app_version: ${{ steps.version.outputs.app_version }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: '**/package-lock.json'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip uv
+          uv pip install --system build hatchling
+
+      - name: Pin Superset
+        run: |
+          python tools/pin_superset.py --latest-tag --write-version
+        
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: superset-src/superset-frontend/node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('superset-src/superset-frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Build Superset Frontend
+        run: |
+          cd superset-src/superset-frontend
+          npm ci
+          npm run build
+        env:
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      - name: Build Superset Wheel
+        run: |
+          python tools/build_wheels.py --superset-only --output dist/wheels
+
+      - name: Build pyPASreporterGUI Wheel
+        run: |
+          python tools/build_wheels.py --app-only --output dist/wheels
+
+      - name: Get versions
+        id: version
+        run: |
+          # Extract versions from built wheels
+          SUPERSET_WHEEL=$(ls dist/wheels/apache_superset-*.whl 2>/dev/null | head -1 || echo "")
+          APP_WHEEL=$(ls dist/wheels/pyPASreporterGUI-*.whl 2>/dev/null | head -1 || echo "")
+          
+          if [[ -n "$SUPERSET_WHEEL" ]]; then
+            SUPERSET_VERSION=$(basename "$SUPERSET_WHEEL" | sed -E 's/apache_superset-([^-]+)-.*/\1/')
+          else
+            SUPERSET_VERSION="unknown"
+          fi
+          
+          if [[ -n "$APP_WHEEL" ]]; then
+            APP_VERSION=$(basename "$APP_WHEEL" | sed -E 's/pyPASreporterGUI-([^-]+)-.*/\1/')
+          else
+            APP_VERSION="0.1.0"
+          fi
+          
+          echo "superset_version=$SUPERSET_VERSION" >> "$GITHUB_OUTPUT"
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Superset version: $SUPERSET_VERSION"
+          echo "App version: $APP_VERSION"
+
+      - name: List built wheels
+        run: |
+          echo "=== Built Wheels ==="
+          ls -la dist/wheels/
+
+      - name: Upload wheels artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels
+          path: dist/wheels/*.whl
+          retention-days: 7
+
+      - name: Upload superset-src artifact (for executables)
+        uses: actions/upload-artifact@v4
+        with:
+          name: superset-src
+          path: |
+            superset-src/superset/static/
+            superset-src/superset/templates/
+          retention-days: 1
+
+  # =============================================================================
+  # Build Linux Executable
+  # =============================================================================
+  build-linux-exe:
+    name: Build Linux Executable
+    runs-on: ubuntu-latest
+    needs: build-superset
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels
+          path: dist/wheels
+
+      - name: Download superset-src assets
+        uses: actions/download-artifact@v4
+        with:
+          name: superset-src
+          path: superset-src
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          
+          # Install all wheels
+          pip install dist/wheels/*.whl
+
+      - name: Verify installation
+        run: |
+          python -c "from pypasreportergui import __version__; print(f'Version: {__version__}')"
+          python -c "import superset; print(f'Superset loaded')"
+
+      - name: Build executable
+        run: |
+          mkdir -p dist/exe
+          pyinstaller --clean --noconfirm tools/build_exe.spec
+          
+          # Move to dist/exe
+          if [[ -d "dist/pyPASreporterGUI" ]]; then
+            mv dist/pyPASreporterGUI dist/exe/
+          fi
+
+      - name: Create tarball
+        run: |
+          cd dist/exe
+          tar -czvf pyPASreporterGUI-linux-x64.tar.gz pyPASreporterGUI/
+          ls -la
+
+      - name: Upload Linux executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-executable
+          path: dist/exe/pyPASreporterGUI-linux-x64.tar.gz
+          retention-days: 7
+
+  # =============================================================================
+  # Build Windows Executable
+  # =============================================================================
+  build-windows-exe:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    needs: build-superset
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels
+          path: dist/wheels
+
+      - name: Download superset-src assets
+        uses: actions/download-artifact@v4
+        with:
+          name: superset-src
+          path: superset-src
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          
+          # Install all wheels
+          Get-ChildItem dist/wheels/*.whl | ForEach-Object { pip install $_.FullName }
+
+      - name: Verify installation
+        shell: pwsh
+        run: |
+          python -c "from pypasreportergui import __version__; print(f'Version: {__version__}')"
+          python -c "import superset; print('Superset loaded')"
+
+      - name: Build executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist/exe
+          pyinstaller --clean --noconfirm tools/build_exe.spec
+          
+          # Move to dist/exe
+          if (Test-Path "dist/pyPASreporterGUI") {
+            Move-Item -Force dist/pyPASreporterGUI dist/exe/
+          }
+
+      - name: Create zip
+        shell: pwsh
+        run: |
+          cd dist/exe
+          Compress-Archive -Path pyPASreporterGUI -DestinationPath pyPASreporterGUI-windows-x64.zip
+          Get-ChildItem
+
+      - name: Upload Windows executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-executable
+          path: dist/exe/pyPASreporterGUI-windows-x64.zip
+          retention-days: 7
+
+  # =============================================================================
+  # Create GitHub Release
+  # =============================================================================
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-superset, build-linux-exe, build-windows-exe]
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          
+          # Copy wheels
+          cp artifacts/wheels/*.whl release-assets/ || true
+          
+          # Copy executables
+          cp artifacts/linux-executable/*.tar.gz release-assets/ || true
+          cp artifacts/windows-executable/*.zip release-assets/ || true
+          
+          echo "=== Release Assets ==="
+          ls -la release-assets/
+
+      - name: Determine release tag
+        id: release_tag
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="${{ github.event.inputs.release_name }}"
+            if [[ "$TAG" == "dev-build" ]]; then
+              TAG="dev-$(date +%Y%m%d-%H%M%S)"
+            fi
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $TAG"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          name: "pyPASreporterGUI ${{ steps.release_tag.outputs.tag }}"
+          body: |
+            ## pyPASreporterGUI Release ${{ steps.release_tag.outputs.tag }}
+            
+            ### Downloads
+            
+            | Platform | File | Description |
+            |----------|------|-------------|
+            | All | `*.whl` | Python wheel packages |
+            | Linux | `pyPASreporterGUI-linux-x64.tar.gz` | Standalone Linux executable |
+            | Windows | `pyPASreporterGUI-windows-x64.zip` | Standalone Windows executable |
+            
+            ### Installation
+            
+            **From wheels:**
+            ```bash
+            pip install pyPASreporterGUI-*.whl apache_superset-*.whl
+            pypasreportergui run
+            ```
+            
+            **Standalone executables:**
+            - Extract the archive
+            - Run `pyPASreporterGUI` (Linux) or `pyPASreporterGUI.exe` (Windows)
+            
+            ### Build Info
+            - Python: ${{ env.PYTHON_VERSION }}
+            - Node.js: ${{ env.NODE_VERSION }}
+            - Superset: ${{ needs.build-superset.outputs.superset_version }}
+            - App Version: ${{ needs.build-superset.outputs.app_version }}
+          files: release-assets/*
+          draft: false
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
