@@ -48,8 +48,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
 
       - name: Install Python dependencies
         run: |
@@ -59,11 +57,13 @@ jobs:
       - name: Pin Superset
         run: |
           python tools/pin_superset.py --latest-tag --write-version
-        
+
       - name: Cache npm dependencies
         uses: actions/cache@v4
         with:
-          path: superset-src/superset-frontend/node_modules
+          path: |
+            superset-src/superset-frontend/node_modules
+            ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('superset-src/superset-frontend/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-npm-
