@@ -1,0 +1,82 @@
+# .gitignore for pyPASreporterGUI
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+coverage.xml
+*.cover
+
+# Logs
+logs/
+*.log
+
+# Superset source (pinned checkout)
+superset-src/
+
+# Build outputs
+dist/
+VERSION_MATRIX.json
+
+# PyInstaller
+*.manifest
+*.spec.bak
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local config overrides
+superset_config_local.py
+.env
+.env.local
+
+# Temp files
+*.tmp
+*.temp
