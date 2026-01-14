@@ -21,7 +21,7 @@ permissions:
 
 env:
   PYTHON_VERSION: '3.11'
-  NODE_VERSION: '20'
+  NODE_VERSION: '18'
   SUPERSET_SHA: ''  # Will be set by pin_superset.py
 
 jobs:
@@ -74,7 +74,7 @@ jobs:
           npm ci
           npm run build
         env:
-          NODE_OPTIONS: '--max-old-space-size=4096 --openssl-legacy-provider'
+          NODE_OPTIONS: '--max-old-space-size=4096'
 
       - name: Build Superset Wheel
         run: |
