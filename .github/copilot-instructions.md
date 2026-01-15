@@ -1,69 +1,89 @@
 # pyPASreporterGUI - AI Coding Instructions
 
 ## Project Overview
-pyPASreporterGUI is a **standalone Apache Superset wrapper** that eliminates the need for Postgres, Redis, Celery, or Docker. It uses SQLite + filesystem cache and adds DuckDB support with custom branding.
+pyPASreporterGUI is a **standalone Apache Superset wrapper** that eliminates Postgres, Redis, Celery, and Docker dependencies. Uses SQLite + filesystem cache with DuckDB support and custom branding.
 
 ## Architecture
-- **src/pypasreportergui/** - Main package: CLI (Typer), runtime helpers, Flask branding blueprint
-- **superset-src/** - Pinned Apache Superset checkout (gitignored, created by build)
-- **tools/** - Individual build scripts (`pin_superset.py`, `build_superset.py`, `build_wheels.py`)
-- **scripts/** - Orchestration (`build_all.py` runs the full pipeline)
+
+### Directory Structure
+- **src/pypasreportergui/** - Main package (CLI, runtime, branding)
+- **superset-src/** - Pinned Superset checkout (gitignored, created by `pin_superset.py`)
+- **tools/** - Build scripts: `pin_superset.py` → `build_superset.py` → `build_wheels.py`
+- **scripts/** - Orchestration (`build_all.py` runs full pipeline)
 
 ### Key Design Decisions
-- **No external services**: SQLite replaces Postgres, FileSystemCache replaces Redis
-- **Branding via Flask Blueprint**: [src/pypasreportergui/branding/blueprint.py](src/pypasreportergui/branding/blueprint.py) injects custom assets without patching Superset
-- **Config generation**: Runtime generates `~/.pypasreportergui/superset_config.py` with all required settings
+- **No external services**: SQLite replaces Postgres; `FileSystemCache` replaces Redis
+- **Branding via Flask Blueprint**: [branding/blueprint.py](src/pypasreportergui/branding/blueprint.py) registers at `/pypasreportergui_static/` without patching Superset
+- **Runtime config generation**: `~/.pypasreportergui/superset_config.py` created via `generate_config()` with `FLASK_APP_MUTATOR` to inject the branding blueprint
+- **PyInstaller support**: `is_frozen()` detection + path patching in `runtime.py` for bundled executables
+
+### Data Flow
+1. CLI (`cli.py`) calls `ensure_home_dir()` → `generate_config()` → sets `SUPERSET_CONFIG_PATH` env var
+2. `init_database()` runs Flask-Migrate; `create_admin_user()` uses FAB security manager
+3. `run_superset_server()` starts Gunicorn/Flask with branding blueprint auto-registered
 
 ## Developer Workflows
 
 ### First-time setup
 ```bash
 bash tools/prereqs.sh && source .venv/bin/activate
-python scripts/build_all.py  # Full build (frontend takes ~15 min)
+python scripts/build_all.py  # Full build (~15 min for frontend)
 ```
 
-### Running the app
+### Quick iteration
 ```bash
-pypasreportergui run --port 8088
-```
-
-### Quick rebuild (skip frontend)
-```bash
-python scripts/build_all.py --skip-frontend --skip-wheels
+python scripts/build_all.py --skip-frontend --skip-wheels  # Backend only
+pypasreportergui run --port 8088 --reload --debug
 ```
 
 ### Testing
 ```bash
-pytest tests/  # Unit tests only
-python tools/verify.py  # Smoke tests (requires running server)
+pytest tests/              # Unit tests (no server needed)
+python tools/verify.py     # Smoke tests (requires running server)
+```
+
+### Pin specific Superset version
+```bash
+python tools/pin_superset.py --sha <commit>  # Or --latest-tag
 ```
 
 ## Code Conventions
 
 ### Python
 - **Type hints required** on all functions
-- **Typer** for CLI commands in [cli.py](src/pypasreportergui/cli.py)
-- **Rich** for console output formatting
-- Use `from __future__ import annotations` for forward references
+- Use `from __future__ import annotations` at top of every file
+- **Typer** for CLI with `@app.command()` decorators
+- **Rich** `Console` for formatted output (see `console.print()` patterns)
 
 ### Adding CLI Commands
-Add to [src/pypasreportergui/cli.py](src/pypasreportergui/cli.py) as `@app.command()` decorated functions. Follow existing patterns like `run()` and `init()`.
+Add to [cli.py](src/pypasreportergui/cli.py) following existing patterns:
+```python
+@app.command()
+def my_command(
+    option: str = typer.Option("default", "--option", "-o", help="Description"),
+) -> None:
+    """Docstring becomes CLI help text."""
+    console.print("[bold blue]Starting...[/bold blue]")
+```
 
-### Configuration Changes
-Modify the config template in [src/pypasreportergui/runtime.py](src/pypasreportergui/runtime.py) `generate_config()` function. Changes affect all new installations.
+### Modifying Superset Config
+Edit the config template string in `generate_config()` in [runtime.py](src/pypasreportergui/runtime.py). Key sections:
+- `FEATURE_FLAGS` - Enable/disable Superset features
+- `CACHE_CONFIG` / `DATA_CACHE_CONFIG` - Filesystem cache settings
+- `FLASK_APP_MUTATOR` - Blueprint registration hook
 
 ### Branding Assets
-Place in [src/pypasreportergui/branding/static/](src/pypasreportergui/branding/static/). Referenced via `/pypasreportergui_static/` URL path.
+Place in [branding/static/](src/pypasreportergui/branding/static/) (logo-horiz.png, favicon.png). Referenced in config as `/pypasreportergui_static/<filename>`.
 
-## Version Tracking
-- **VERSION_MATRIX.json** - Auto-generated build metadata (Superset SHA, Python/Node versions)
-- Pin specific Superset version: `python tools/pin_superset.py --sha <commit>`
+## Disabled Superset Features
+These require Redis/Celery and are explicitly disabled in config:
+- `ALERT_REPORTS: False` - Scheduled reports/alerts
+- `SCHEDULED_QUERIES: False` - Async query scheduling
+- `SQLLAB_ASYNC_TIME_LIMIT_SEC = 0` - Async SQL Lab queries
 
-## What Won't Work
-These Superset features require Redis/Celery and are **disabled**:
-- Scheduled reports/alerts (`ALERT_REPORTS: False`)
-- Async query execution
-- Distributed caching
-
-## Superset-Specific Guidance
-When modifying anything in **superset-src/**, refer to [superset-src/AGENTS.md](superset-src/AGENTS.md) for Superset-specific conventions (TypeScript patterns, testing strategy, etc.).
+## Build Outputs
+| Output | Location |
+|--------|----------|
+| Python wheels | `dist/wheels/` |
+| Executable | `build/build_exe/pyPASreporterGUI` |
+| Version metadata | `VERSION_MATRIX.json` |
