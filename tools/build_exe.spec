@@ -21,7 +21,6 @@ if superset_spec and superset_spec.origin:
 else:
     SUPERSET_DIR = None
 
-# Analysis
 block_cipher = None
 
 # Data files to include
@@ -30,15 +29,25 @@ datas = [
     (str(BRANDING_STATIC), "pypasreportergui/branding/static"),
 ]
 
-# Add Superset static assets if found
+# Add Superset assets if found
 if SUPERSET_DIR:
     superset_static = SUPERSET_DIR / "static"
     if superset_static.exists():
         datas.append((str(superset_static), "superset/static"))
-    
+
     superset_templates = SUPERSET_DIR / "templates"
     if superset_templates.exists():
         datas.append((str(superset_templates), "superset/templates"))
+
+    # FIX: Superset DB migrations (required for `superset db upgrade`)
+    superset_migrations = SUPERSET_DIR / "migrations"
+    if superset_migrations.exists():
+        datas.append((str(superset_migrations), "superset/migrations"))
+
+    # Strongly recommended: translations (Superset imports these dynamically)
+    superset_translations = SUPERSET_DIR / "translations"
+    if superset_translations.exists():
+        datas.append((str(superset_translations), "superset/translations"))
 
 # Hidden imports that PyInstaller might miss
 hiddenimports = [
@@ -48,23 +57,23 @@ hiddenimports = [
     "pypasreportergui.runtime",
     "pypasreportergui.branding",
     "pypasreportergui.branding.blueprint",
-    
+
     # CLI framework
     "typer",
     "typer.main",
     "click",
-    "click.testing",  # Needed for frozen CLI execution
+    "click.testing",
     "rich",
     "rich.console",
     "rich.table",
-    
+
     # Database
     "duckdb",
     "duckdb_engine",
     "duckdb_engine.datatypes",
     "sqlalchemy",
     "sqlalchemy.dialects.sqlite",
-    
+
     # Flask/Web
     "flask",
     "flask_appbuilder",
@@ -77,7 +86,7 @@ hiddenimports = [
     "wtforms",
     "jinja2",
     "werkzeug",
-    
+
     # Alembic (database migrations)
     "alembic",
     "alembic.config",
@@ -88,20 +97,21 @@ hiddenimports = [
     "alembic.operations",
     "alembic.ddl",
     "alembic.ddl.impl",
-    
+
     # Superset (main modules)
     "superset",
     "superset.app",
     "superset.config",
     "superset.cli",
-    "superset.cli.main",  # Needed for frozen CLI execution
+    "superset.cli.main",
     "superset.views",
     "superset.models",
     "superset.connectors",
     "superset.db_engine_specs",
     "superset.security",
     "superset.utils",
-    
+    "superset.migrations",  # (folder still must be in datas)
+
     # Celery (required by Superset even when disabled)
     "celery",
     "celery.fixups",
@@ -143,18 +153,18 @@ hiddenimports = [
     "billiard",
     "vine",
     "amqp",
-    
+
     # Data processing
     "pandas",
     "numpy",
     "sqlparse",
-    
-    # Image processing (required for screenshots)
+
+    # Image processing
     "PIL",
     "PIL.Image",
     "PIL.ImageDraw",
     "PIL.ImageFont",
-    
+
     # Other common dependencies
     "email_validator",
     "marshmallow",
@@ -171,7 +181,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        # Exclude unnecessary large packages
         "matplotlib",
         "tkinter",
         "test",
@@ -195,7 +204,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True,  # Console app for CLI
+    console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
