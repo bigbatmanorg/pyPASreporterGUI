@@ -329,11 +329,12 @@ jobs:
           $exe = "dist/exe/pyPASreporterGUI/pyPASreporterGUI.exe"
           $tempHome = Join-Path $env:TEMP ("pprg_home_" + [guid]::NewGuid().ToString())
           New-Item -ItemType Directory -Force -Path $tempHome | Out-Null
-          $env:HOME = $tempHome
-          Write-Host "Using temporary HOME: $env:HOME"
+          # Use PYPASREPORTERGUI_HOME since Windows Path.home() doesn't use HOME env var
+          $env:PYPASREPORTERGUI_HOME = Join-Path $tempHome ".pypasreportergui"
+          Write-Host "Using PYPASREPORTERGUI_HOME: $env:PYPASREPORTERGUI_HOME"
           & $exe init
-          if (-not (Test-Path (Join-Path $env:HOME ".pypasreportergui/superset.db"))) { throw "Database not created" }
-          if (-not (Test-Path (Join-Path $env:HOME ".pypasreportergui/superset_config.py"))) { throw "Config not created" }
+          if (-not (Test-Path (Join-Path $env:PYPASREPORTERGUI_HOME "superset.db"))) { throw "Database not created" }
+          if (-not (Test-Path (Join-Path $env:PYPASREPORTERGUI_HOME "superset_config.py"))) { throw "Config not created" }
 
       - name: Create zip
         shell: pwsh
