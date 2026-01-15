@@ -284,18 +284,18 @@ jobs:
         shell: pwsh
         run: |
           python -c "from pypasreportergui import __version__; print(f'App Version: {__version__}')"
-          python - <<'PY'
+          python -c @"
           import superset
           from pathlib import Path
           p = Path(superset.__file__).resolve().parent
-          static_assets = p / "static" / "assets"
-          templates = p / "templates"
+          static_assets = p / 'static' / 'assets'
+          templates = p / 'templates'
           if not static_assets.exists():
-            raise SystemExit(f"ERROR: Missing Superset static assets at: {static_assets}")
+            raise SystemExit(f'ERROR: Missing Superset static assets at: {static_assets}')
           if not templates.exists():
-            raise SystemExit(f"ERROR: Missing Superset templates at: {templates}")
-          print("OK: Superset assets present.")
-          PY
+            raise SystemExit(f'ERROR: Missing Superset templates at: {templates}')
+          print('OK: Superset assets present.')
+          "@
 
       - name: Build executable
         shell: pwsh
