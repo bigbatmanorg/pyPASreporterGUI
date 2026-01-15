@@ -18,8 +18,11 @@ from pypasreportergui import __app_name__, __version__
 from pypasreportergui.runtime import (
     create_admin_user,
     ensure_home_dir,
+    ensure_extensions_dir,
+    detect_superset_extensions_support,
     generate_config,
     get_superset_home,
+    get_extensions_path,
     init_database,
     run_superset_server,
     is_frozen,
@@ -32,6 +35,8 @@ app = typer.Typer(
     help="pyPASreporterGUI - A branded Superset-based data analytics GUI",
     add_completion=False,
 )
+extensions_app = typer.Typer(help="Manage Superset extension bundles.")
+app.add_typer(extensions_app, name="extensions")
 # Force UTF-8 encoding for Windows compatibility
 console = Console(force_terminal=True, legacy_windows=False)
 
@@ -74,6 +79,7 @@ def run(
     console.print(f"[bold blue]Starting {__app_name__}...[/bold blue]")
 
     home_dir = ensure_home_dir()
+    ensure_extensions_dir(home_dir)
     config_path = generate_config(home_dir)
 
     os.environ["SUPERSET_CONFIG_PATH"] = str(config_path)
@@ -111,6 +117,7 @@ def init(
     console.print(f"[bold blue]Initializing {__app_name__}...[/bold blue]")
 
     home_dir = ensure_home_dir()
+    ensure_extensions_dir(home_dir)
     config_path = generate_config(home_dir, force=force)
 
     os.environ["SUPERSET_CONFIG_PATH"] = str(config_path)
@@ -381,6 +388,29 @@ def add_duckdb(
             console.print("[dim]Please add manually using the steps above.[/dim]")
     else:
         console.print("[dim]Run 'pypasreportergui init' first, then add the database via the UI.[/dim]")
+
+
+@extensions_app.command()
+def status() -> None:
+    """Print Superset extension support status and bundle counts."""
+    home_dir = get_superset_home()
+    extensions_path = get_extensions_path(home_dir)
+    supx_files = list(extensions_path.glob("*.supx")) if extensions_path.exists() else []
+    support_state, _, support_reason = detect_superset_extensions_support()
+    enable_extensions = support_state is not False
+
+    if support_state is True:
+        support_label = "YES"
+    else:
+        support_label = "NO"
+        if support_reason:
+            support_label = f"NO ({support_reason})"
+
+    console.print("[bold blue]Superset Extensions Status[/bold blue]")
+    console.print(f"Extensions supported by pinned Superset: [green]{support_label}[/green]")
+    console.print(f"EXTENSIONS_PATH: [cyan]{extensions_path}[/cyan]")
+    console.print(f"Bundles found: [yellow]{len(supx_files)}[/yellow]")
+    console.print(f"Enable flag effective: [green]{enable_extensions}[/green]")
 
 
 if __name__ == "__main__":
