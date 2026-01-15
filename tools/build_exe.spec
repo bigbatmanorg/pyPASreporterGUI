@@ -82,12 +82,19 @@ hiddenimports = [
     "logging.config",
     "logging.handlers",
 
-    # Database
+    # Database - DuckDB support
     "duckdb",
+    "duckdb.typing",
+    "duckdb.functional",
+    "duckdb.value",
+    "_duckdb",  # Native extension module
     "duckdb_engine",
     "duckdb_engine.datatypes",
+    "duckdb_engine.config",
+    "duckdb_engine._supports",
     "sqlalchemy",
     "sqlalchemy.dialects.sqlite",
+    "sqlalchemy.dialects.postgresql",  # duckdb_engine uses PG dialect as base
 
     # Flask/Web
     "flask",
