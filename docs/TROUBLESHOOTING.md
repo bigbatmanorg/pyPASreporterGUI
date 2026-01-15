@@ -368,6 +368,95 @@ dos2unix tools/*.sh
 
 ---
 
+## Frozen Build (PyInstaller) Issues
+
+### Migrations Not Found
+
+**Problem:** `Path doesn't exist: .../superset/extensions/../migrations`
+
+This occurs when PyInstaller's bundled paths don't match what Superset expects.
+
+**Solution:**
+This is fixed in the latest version. If you encounter it with a custom build:
+1. Ensure `build_exe.spec` includes the migrations directory:
+   ```python
+   datas = [(str(SUPERSET_DIR / "migrations"), "superset/migrations"), ...]
+   ```
+2. Verify migrations are bundled: check `dist/pyPASreporterGUI/_internal/superset/migrations/versions/`
+
+### ModuleNotFoundError in Frozen Build
+
+**Problem:** `ModuleNotFoundError: No module named 'X'` when running the frozen executable
+
+Common missing modules and fixes:
+
+| Module | Add to hiddenimports |
+|--------|---------------------|
+| `logging.config` | `"logging", "logging.config", "logging.handlers"` |
+| `isodate` | `"isodate"` |
+| `sqlalchemy_utils` | `"sqlalchemy_utils"` |
+| `flask_appbuilder.models.mixins` | `"flask_appbuilder", "flask_appbuilder.models", "flask_appbuilder.models.mixins"` |
+
+**Solution:**
+Add the missing module to `hiddenimports` in `tools/build_exe.spec` and rebuild.
+
+### Flask-Limiter Errors
+
+**Problem:** `AttributeError: 'NoneType' object has no attribute '__module__'`
+
+This occurs when Flask's `create_app()` is called multiple times in frozen mode.
+
+**Solution:**
+This is fixed in the latest version. The runtime now caches the Flask app globally to prevent re-initialization issues.
+
+### Shebang/PATH Issues (Linux/Snap)
+
+**Problem:** Executable tries to use wrong Python interpreter (e.g., Snap's Python)
+
+**Symptoms:**
+- Errors mentioning `/snap/...` paths
+- `env: python: No such file or directory`
+
+**Solution:**
+1. The frozen executable should not use shebangs at all - it's self-contained
+2. If building from source, ensure you're using a clean virtualenv:
+   ```bash
+   python -m venv .venv-build
+   source .venv-build/bin/activate
+   pip install pyinstaller
+   pip install dist/wheels/*.whl
+   pyinstaller tools/build_exe.spec
+   ```
+
+### Doctor Command for Frozen Builds
+
+Run the doctor command to check frozen build status:
+```bash
+./pyPASreporterGUI doctor
+```
+
+This will show:
+- Execution mode (Frozen vs Normal)
+- `sys._MEIPASS` location
+- Bundled asset verification
+- Environment variables
+
+### Validating Frozen Builds
+
+Use the validation script to smoke test builds:
+```bash
+bash scripts/validate_linux.sh
+```
+
+This verifies:
+- Bundled migrations exist (300+ files expected)
+- Static assets and templates bundled
+- `doctor` command works
+- `init` command completes successfully
+- `run` command starts and binds to port
+
+---
+
 ## Getting Help
 
 ### Collecting Debug Info

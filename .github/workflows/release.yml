@@ -184,6 +184,62 @@ jobs:
             mv dist/pyPASreporterGUI dist/exe/
           fi
 
+      - name: Verify bundled assets
+        run: |
+          echo "=== Checking bundled migrations ==="
+          MIGRATIONS_DIR="dist/exe/pyPASreporterGUI/_internal/superset/migrations/versions"
+          if [[ ! -d "$MIGRATIONS_DIR" ]]; then
+            echo "ERROR: Migrations directory not found at $MIGRATIONS_DIR"
+            exit 1
+          fi
+          MIGRATION_COUNT=$(find "$MIGRATIONS_DIR" -name "*.py" -type f | wc -l)
+          echo "Found $MIGRATION_COUNT migration files"
+          if [[ $MIGRATION_COUNT -lt 300 ]]; then
+            echo "ERROR: Too few migrations bundled (expected 300+, got $MIGRATION_COUNT)"
+            exit 1
+          fi
+          echo "OK: Migrations bundled correctly"
+
+          echo "=== Checking bundled static assets ==="
+          STATIC_DIR="dist/exe/pyPASreporterGUI/_internal/superset/static"
+          if [[ ! -d "$STATIC_DIR" ]]; then
+            echo "ERROR: Static assets directory not found at $STATIC_DIR"
+            exit 1
+          fi
+          STATIC_COUNT=$(find "$STATIC_DIR" -type f | wc -l)
+          echo "Found $STATIC_COUNT static files"
+          echo "OK: Static assets bundled correctly"
+
+          echo "=== Checking bundled templates ==="
+          TEMPLATES_DIR="dist/exe/pyPASreporterGUI/_internal/superset/templates"
+          if [[ ! -d "$TEMPLATES_DIR" ]]; then
+            echo "ERROR: Templates directory not found at $TEMPLATES_DIR"
+            exit 1
+          fi
+          TEMPLATE_COUNT=$(find "$TEMPLATES_DIR" -type f | wc -l)
+          echo "Found $TEMPLATE_COUNT template files"
+          echo "OK: Templates bundled correctly"
+
+      - name: Smoke test - doctor command
+        run: |
+          echo "=== Running doctor command ==="
+          ./dist/exe/pyPASreporterGUI/pyPASreporterGUI doctor
+
+      - name: Smoke test - init command
+        run: |
+          echo "=== Running init command ==="
+          # Use temporary HOME to avoid polluting CI environment
+          export HOME=$(mktemp -d)
+          echo "Using temporary HOME: $HOME"
+          ./dist/exe/pyPASreporterGUI/pyPASreporterGUI init
+          echo "=== Verifying init created files ==="
+          ls -la "$HOME/.pypasreportergui/"
+          if [[ ! -f "$HOME/.pypasreportergui/superset.db" ]]; then
+            echo "ERROR: Database not created"
+            exit 1
+          fi
+          echo "OK: Init completed successfully"
+
       - name: Create tarball
         run: |
           cd dist/exe

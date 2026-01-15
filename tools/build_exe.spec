@@ -67,6 +67,11 @@ hiddenimports = [
     "rich.console",
     "rich.table",
 
+    # Logging (required by alembic env.py)
+    "logging",
+    "logging.config",
+    "logging.handlers",
+
     # Database
     "duckdb",
     "duckdb_engine",
@@ -97,6 +102,14 @@ hiddenimports = [
     "alembic.operations",
     "alembic.ddl",
     "alembic.ddl.impl",
+
+    # Migration script dependencies (dynamically loaded by Alembic)
+    "isodate",
+    "sqlalchemy_utils",
+    "flask_appbuilder",
+    "flask_appbuilder.models",
+    "flask_appbuilder.models.mixins",
+    "importlib",
 
     # Superset (main modules)
     "superset",

@@ -1,5 +1,5 @@
 # .gitignore for pyPASreporterGUI
-
+.venv-build
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

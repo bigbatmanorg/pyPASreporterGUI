@@ -257,6 +257,110 @@ def is_frozen() -> bool:
     return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
 
+def get_frozen_base_path() -> Path:
+    """Get the base path for frozen app resources.
+    
+    In a PyInstaller bundle, returns sys._MEIPASS which is where
+    bundled data files are extracted.
+    """
+    if is_frozen():
+        return Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    return Path(__file__).parent.parent
+
+
+def get_superset_dir() -> Path:
+    """Get the Superset package directory.
+    
+    In frozen mode, this points to the bundled superset data.
+    In normal mode, this returns the installed superset package location.
+    """
+    if is_frozen():
+        return get_frozen_base_path() / "superset"
+    else:
+        import superset
+        return Path(superset.__file__).parent
+
+
+def patch_superset_paths_for_frozen() -> None:
+    """Patch Superset's APP_DIR to point to the correct location in frozen builds.
+    
+    PyInstaller bundles data files (migrations, templates, static) into
+    sys._MEIPASS, but Superset's APP_DIR is computed from __file__ which
+    doesn't point there. This function patches APP_DIR before Superset
+    is initialized.
+    """
+    if not is_frozen():
+        return
+    
+    import superset.extensions
+    
+    # The correct path to superset package in the frozen bundle
+    frozen_superset_dir = str(get_superset_dir())
+    
+    # Patch the APP_DIR used by Flask-Migrate to find migrations
+    superset.extensions.APP_DIR = frozen_superset_dir
+    
+    print(f"[frozen] Patched APP_DIR to: {frozen_superset_dir}")
+    
+    # Verify migrations exist
+    migrations_path = Path(frozen_superset_dir) / "migrations"
+    if not migrations_path.exists():
+        raise RuntimeError(
+            f"Superset migrations not found at: {migrations_path}\n"
+            "This indicates the PyInstaller bundle is missing required data files.\n"
+            "Please rebuild with 'pyinstaller tools/build_exe.spec'"
+        )
+
+
+def patch_migrate_directory(app) -> None:
+    """Patch Flask-Migrate's directory after app creation.
+    
+    This is needed because superset.initialization imports APP_DIR at module level,
+    so patching superset.extensions.APP_DIR after import doesn't affect the already-
+    imported local variable. We must patch the migrate extension's directory directly.
+    """
+    if not is_frozen():
+        return
+    
+    from superset.extensions import migrate
+    
+    frozen_superset_dir = str(get_superset_dir())
+    correct_migrations_dir = frozen_superset_dir + "/migrations"
+    
+    # Patch the migrate extension's directory attribute
+    migrate.directory = correct_migrations_dir
+    
+    print(f"[frozen] Patched migrate.directory to: {correct_migrations_dir}")
+
+
+# Global cached app for frozen mode to avoid re-initialization issues
+_frozen_app = None
+
+
+def get_frozen_app():
+    """Get or create the Superset Flask app for frozen mode.
+    
+    In frozen mode, we cache the app to avoid re-initialization issues
+    that occur when Flask-Limiter tries to decorate already-registered views.
+    """
+    global _frozen_app
+    
+    if _frozen_app is not None:
+        return _frozen_app
+    
+    # CRITICAL: Patch Superset paths before importing create_app
+    patch_superset_paths_for_frozen()
+    
+    from superset.app import create_app
+    
+    _frozen_app = create_app()
+    
+    # CRITICAL: Patch migrate.directory AFTER app creation
+    patch_migrate_directory(_frozen_app)
+    
+    return _frozen_app
+
+
 def run_superset_command(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
     """Run a Superset CLI command.
 
@@ -290,10 +394,8 @@ def _run_superset_command_frozen(args: list[str], check: bool = True) -> subproc
     output = ""
 
     try:
-        # Import within function to delay until needed
-        from superset.app import create_app
-        
-        app = create_app()
+        # Use cached app to avoid re-initialization issues
+        app = get_frozen_app()
 
         with app.app_context():
             if args == ["db", "upgrade"]:
@@ -459,15 +561,14 @@ def _run_superset_server_frozen(
     debug: bool = False,
 ) -> None:
     """Run Superset server directly when frozen (PyInstaller)."""
-    from superset.app import create_app
+    # Use cached app to avoid re-initialization issues
+    app = get_frozen_app()
 
-    # Create the Flask application
-    app = create_app()
-
-    # Register our branding blueprint
+    # Register our branding blueprint if not already registered
     try:
         from pypasreportergui.branding.blueprint import branding_bp
-        app.register_blueprint(branding_bp)
+        if "pypasreportergui_branding" not in app.blueprints:
+            app.register_blueprint(branding_bp)
     except Exception as e:
         print(f"Warning: Could not register branding blueprint: {e}")
 

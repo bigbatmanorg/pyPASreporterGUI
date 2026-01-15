@@ -22,6 +22,9 @@ from pypasreportergui.runtime import (
     get_superset_home,
     init_database,
     run_superset_server,
+    is_frozen,
+    get_frozen_base_path,
+    get_superset_dir,
 )
 
 app = typer.Typer(
@@ -136,6 +139,23 @@ def doctor() -> None:
     """
     console.print(f"[bold blue]{__app_name__} Doctor[/bold blue]\n")
 
+    # Frozen mode detection
+    frozen = is_frozen()
+    console.print(f"[bold]Execution Mode:[/bold] {'[cyan]Frozen (PyInstaller)[/cyan]' if frozen else '[dim]Normal Python[/dim]'}")
+    console.print(f"[bold]sys.executable:[/bold] {sys.executable}")
+    if frozen:
+        console.print(f"[bold]sys._MEIPASS:[/bold] {get_frozen_base_path()}")
+    console.print()
+
+    # Environment info
+    env_table = Table(title="Environment")
+    env_table.add_column("Variable", style="cyan")
+    env_table.add_column("Value", style="yellow")
+    env_table.add_row("HOME", os.environ.get("HOME", "[not set]"))
+    env_table.add_row("PATH (first 80 chars)", os.environ.get("PATH", "")[:80] + "...")
+    console.print(env_table)
+    console.print()
+
     # Version info
     table = Table(title="Version Information")
     table.add_column("Component", style="cyan")
@@ -198,9 +218,33 @@ def doctor() -> None:
     console.print(path_table)
     console.print()
 
+    # Bundled assets check (critical for frozen apps)
+    all_ok = True
+    if frozen:
+        console.print("[bold]Bundled Assets (Frozen Mode):[/bold]")
+        superset_dir = get_superset_dir()
+        
+        required_dirs = [
+            ("migrations", superset_dir / "migrations"),
+            ("migrations/versions", superset_dir / "migrations" / "versions"),
+            ("templates", superset_dir / "templates"),
+            ("static/assets", superset_dir / "static" / "assets"),
+        ]
+        
+        for name, path in required_dirs:
+            if path.exists():
+                if path.is_dir():
+                    count = len(list(path.iterdir()))
+                    console.print(f"[green]✓[/green] {name}: {path} ({count} items)")
+                else:
+                    console.print(f"[green]✓[/green] {name}: {path}")
+            else:
+                console.print(f"[red]✗[/red] {name}: {path} [red]MISSING[/red]")
+                all_ok = False
+        console.print()
+
     # Sanity checks
     console.print("[bold]Sanity Checks:[/bold]")
-    all_ok = True
 
     # Check Superset
     try:
