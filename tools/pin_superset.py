@@ -2,7 +2,7 @@
 """Pin Superset to a specific version or find newest compatible commit.
 
 This script clones/updates the Apache Superset repository and pins it to:
-- A specific SHA (--sha)
+- A specific SHA/tag/ref (--sha)
 - The latest release tag (--latest-tag)
 - The newest compatible commit on a branch (--branch with --scan-limit)
 
@@ -21,7 +21,6 @@ from pathlib import Path
 
 def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
     """Run a command and return the result."""
-    # Use shell=True on Windows for commands like npm which are actually .cmd files
     use_shell = os.name == "nt" and cmd and cmd[0] in ("npm", "npx", "node")
     return subprocess.run(cmd, cwd=cwd, check=check, text=True, capture_output=True, shell=use_shell)
 
@@ -31,12 +30,30 @@ def git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedProces
     return run(["git", "-C", str(cwd), *args], check=check)
 
 
+def is_shallow_repo(repo_root: Path) -> bool:
+    """True if the repo is shallow (common in CI)."""
+    r = git(repo_root, "rev-parse", "--is-shallow-repository", check=False)
+    return r.returncode == 0 and r.stdout.strip().lower() == "true"
+
+
+def ensure_full_history(repo_root: Path) -> None:
+    """Try to convert shallow clone into a full clone (best-effort)."""
+    if not is_shallow_repo(repo_root):
+        return
+    print("Repo is shallow; attempting to unshallow...")
+    git(repo_root, "fetch", "--unshallow", "--tags", "--prune", check=False)
+    # If --unshallow failed (older git / edge cases), fall back to a deep fetch.
+    if is_shallow_repo(repo_root):
+        git(repo_root, "fetch", "--depth", "1000000", "--tags", "--prune", check=False)
+
+
 def ensure_repo(repo_root: Path, repo_url: str) -> None:
     """Clone the repository if it doesn't exist."""
     if repo_root.exists() and (repo_root / ".git").exists():
         return
     repo_root.parent.mkdir(parents=True, exist_ok=True)
     print(f"Cloning {repo_url} to {repo_root}...")
+    # Keep shallow for speed; we will unshallow only if needed.
     run(["git", "clone", "--depth", "100", repo_url, str(repo_root)])
 
 
@@ -57,8 +74,15 @@ def get_default_branch(repo_root: Path) -> str:
 def update_repo(repo_root: Path, branch: str) -> None:
     """Fetch latest changes and checkout the specified branch."""
     print(f"Updating repository on branch {branch}...")
-    git(repo_root, "fetch", "--all", "--tags", "--prune")
-    git(repo_root, "checkout", branch)
+    git(repo_root, "fetch", "--all", "--tags", "--prune", check=False)
+    ensure_full_history(repo_root)
+
+    # Ensure we can checkout the branch even if it's not a local branch yet.
+    r = git(repo_root, "checkout", branch, check=False)
+    if r.returncode != 0:
+        # Create/reset local branch tracking origin/<branch>
+        git(repo_root, "checkout", "-B", branch, f"origin/{branch}", check=True)
+
     git(repo_root, "pull", "--ff-only", check=False)
 
 
@@ -67,7 +91,6 @@ def get_latest_tag(repo_root: Path) -> str:
     result = git(repo_root, "tag", "-l", "--sort=-v:refname")
     tags = result.stdout.strip().split("\n")
 
-    # Filter for valid semver release tags
     semver_pattern = re.compile(r"^\d+\.\d+\.\d+$")
     for tag in tags:
         tag = tag.strip()
@@ -78,8 +101,30 @@ def get_latest_tag(repo_root: Path) -> str:
 
 
 def checkout_ref(repo_root: Path, ref: str) -> None:
-    """Checkout a specific reference (SHA, tag, branch)."""
-    git(repo_root, "checkout", ref)
+    """Checkout a specific reference (SHA, tag, branch).
+
+    CI commonly uses shallow clones; a tag/sha might not be reachable until we unshallow.
+    """
+    # First try a normal checkout.
+    r = git(repo_root, "checkout", ref, check=False)
+    if r.returncode == 0:
+        return
+
+    # Fetch tags and try again.
+    git(repo_root, "fetch", "--all", "--tags", "--prune", check=False)
+    ensure_full_history(repo_root)
+
+    # Try fetching the ref explicitly (works for tags/branches/SHAs in many cases).
+    git(repo_root, "fetch", "origin", ref, check=False)
+
+    r2 = git(repo_root, "checkout", ref, check=False)
+    if r2.returncode != 0:
+        msg = (
+            f"Failed to checkout ref '{ref}'.\n"
+            f"stdout:\n{r2.stdout}\n"
+            f"stderr:\n{r2.stderr}\n"
+        )
+        raise RuntimeError(msg)
 
 
 def get_head_sha(repo_root: Path) -> str:
@@ -105,7 +150,6 @@ def get_superset_version(repo_root: Path) -> str:
         if match:
             return match.group(1)
 
-    # Try pyproject.toml
     pyproject = repo_root / "pyproject.toml"
     if pyproject.exists():
         content = pyproject.read_text()
@@ -120,14 +164,10 @@ def write_version_matrix(base_dir: Path, data: dict) -> None:
     """Write version matrix to JSON and Markdown files."""
     json_path = base_dir / "VERSION_MATRIX.json"
     md_path = base_dir / "docs" / "VERSION_MATRIX.md"
-
-    # Ensure docs directory exists
     md_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write JSON
     json_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
-    # Write Markdown
     lines = [
         "# Version Matrix",
         "",
@@ -135,8 +175,8 @@ def write_version_matrix(base_dir: Path, data: dict) -> None:
         "",
         "## Pinned Versions",
         "",
-        f"| Component | Version |",
-        f"|-----------|---------|",
+        "| Component | Version |",
+        "|-----------|---------|",
         f"| Superset SHA | `{data.get('superset_sha', 'TBD')[:12]}` |",
         f"| Superset Version | {data.get('superset_version', 'TBD')} |",
         f"| Superset Branch/Tag | {data.get('superset_branch', 'TBD')} |",
@@ -152,8 +192,6 @@ def write_version_matrix(base_dir: Path, data: dict) -> None:
         "",
         "## Rebuild Instructions",
         "",
-        "To rebuild with the same pinned version:",
-        "",
         "```bash",
         f"python tools/pin_superset.py --sha {data.get('superset_sha', 'SHA')}",
         "python tools/build_superset.py",
@@ -163,7 +201,7 @@ def write_version_matrix(base_dir: Path, data: dict) -> None:
     ]
     md_path.write_text("\n".join(lines), encoding="utf-8")
 
-    print(f"Version matrix written to:")
+    print("Version matrix written to:")
     print(f"  - {json_path}")
     print(f"  - {md_path}")
 
@@ -177,7 +215,7 @@ def main() -> int:
     parser.add_argument("--branch", default=None,
                         help="Branch to pin (default: auto-detect)")
     parser.add_argument("--sha", default=None,
-                        help="Specific commit SHA to pin")
+                        help="Specific commit SHA/tag/ref to pin")
     parser.add_argument("--latest-tag", action="store_true",
                         help="Pin to the latest release tag")
     parser.add_argument("--scan-limit", type=int, default=100,
@@ -189,24 +227,22 @@ def main() -> int:
     base_dir = Path(__file__).resolve().parents[1]
     repo_root = (base_dir / args.repo).resolve()
 
-    # Clone or update repository
     ensure_repo(repo_root, args.repo_url)
 
     if args.sha:
-        # Pin to specific SHA
-        print(f"Pinning to SHA: {args.sha}")
-        git(repo_root, "fetch", "--all", "--tags", "--prune")
+        print(f"Pinning to ref: {args.sha}")
+        git(repo_root, "fetch", "--all", "--tags", "--prune", check=False)
+        ensure_full_history(repo_root)
         checkout_ref(repo_root, args.sha)
         branch_or_tag = args.sha[:12]
     elif args.latest_tag:
-        # Pin to latest release tag
-        git(repo_root, "fetch", "--all", "--tags", "--prune")
+        git(repo_root, "fetch", "--all", "--tags", "--prune", check=False)
+        ensure_full_history(repo_root)
         tag = get_latest_tag(repo_root)
         print(f"Pinning to latest tag: {tag}")
         checkout_ref(repo_root, tag)
         branch_or_tag = tag
     else:
-        # Pin to branch tip (or scan for compatible commit)
         branch = args.branch or get_default_branch(repo_root)
         update_repo(repo_root, branch)
         branch_or_tag = branch
@@ -215,7 +251,7 @@ def main() -> int:
     superset_version = get_superset_version(repo_root)
 
     print(f"\n{'='*60}")
-    print(f"Pinned Superset:")
+    print("Pinned Superset:")
     print(f"  SHA: {sha}")
     print(f"  Version: {superset_version}")
     print(f"  Branch/Tag: {branch_or_tag}")
@@ -225,7 +261,6 @@ def main() -> int:
         import datetime
         import platform
 
-        # Get pyPASreporterGUI version
         try:
             from pypasreportergui import __version__ as app_version
         except ImportError:

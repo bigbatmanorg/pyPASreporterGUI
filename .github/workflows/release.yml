@@ -15,26 +15,28 @@ on:
         required: false
         default: 'true'
         type: boolean
+      superset_ref:
+        description: 'Superset ref (tag/sha). Default: 6.0.0'
+        required: false
+        default: '6.0.0'
 
 permissions:
   contents: write
 
 env:
   PYTHON_VERSION: '3.11'
-  NODE_VERSION: '18'
-  SUPERSET_SHA: ''  # Will be set by pin_superset.py
+  NODE_VERSION: '20'
+  NPM_VERSION: '10.8.2'
+  NODE_OPTIONS: '--max-old-space-size=4096'
 
 jobs:
-  # =============================================================================
-  # Build Frontend & Backend (shared artifact for all platforms)
-  # =============================================================================
   build-superset:
     name: Build Superset Frontend & Wheels
     runs-on: ubuntu-latest
     outputs:
       superset_version: ${{ steps.version.outputs.superset_version }}
       app_version: ${{ steps.version.outputs.app_version }}
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -49,15 +51,30 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install Python dependencies
+      - name: Ensure npm version
+        run: |
+          npm --version
+          npm i -g "npm@${{ env.NPM_VERSION }}"
+          npm --version
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Install Python build dependencies
         run: |
           python -m pip install --upgrade pip uv
           uv pip install --system build hatchling
 
       - name: Pin Superset
         run: |
-          # Use specific Superset release tag for stability
-          python tools/pin_superset.py --sha 6.0.0 --write-version
+          SUP_REF="${{ github.event.inputs.superset_ref }}"
+          if [ -z "$SUP_REF" ]; then SUP_REF="6.0.0"; fi
+          python tools/pin_superset.py --sha "$SUP_REF" --write-version
 
       - name: Cache npm dependencies
         uses: actions/cache@v4
@@ -73,7 +90,6 @@ jobs:
         run: |
           cd superset-src/superset-frontend
           npm ci
-          # Superset 6.0.0+ uses modern tooling that works with Node 18 without legacy openssl
           npm run build
 
       - name: Build Superset Wheel
@@ -87,26 +103,23 @@ jobs:
       - name: Get versions
         id: version
         run: |
-          # Extract versions from built wheels
           SUPERSET_WHEEL=$(ls dist/wheels/apache_superset-*.whl 2>/dev/null | head -1 || echo "")
           APP_WHEEL=$(ls dist/wheels/pyPASreporterGUI-*.whl 2>/dev/null | head -1 || echo "")
-          
+
           if [[ -n "$SUPERSET_WHEEL" ]]; then
             SUPERSET_VERSION=$(basename "$SUPERSET_WHEEL" | sed -E 's/apache_superset-([^-]+)-.*/\1/')
           else
             SUPERSET_VERSION="unknown"
           fi
-          
+
           if [[ -n "$APP_WHEEL" ]]; then
             APP_VERSION=$(basename "$APP_WHEEL" | sed -E 's/pyPASreporterGUI-([^-]+)-.*/\1/')
           else
             APP_VERSION="0.1.0"
           fi
-          
+
           echo "superset_version=$SUPERSET_VERSION" >> "$GITHUB_OUTPUT"
           echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Superset version: $SUPERSET_VERSION"
-          echo "App version: $APP_VERSION"
 
       - name: List built wheels
         run: |
@@ -120,23 +133,11 @@ jobs:
           path: dist/wheels/*.whl
           retention-days: 7
 
-      - name: Upload superset-src artifact (for executables)
-        uses: actions/upload-artifact@v4
-        with:
-          name: superset-src
-          path: |
-            superset-src/superset/static/
-            superset-src/superset/templates/
-          retention-days: 1
-
-  # =============================================================================
-  # Build Linux Executable
-  # =============================================================================
   build-linux-exe:
     name: Build Linux Executable
     runs-on: ubuntu-latest
     needs: build-superset
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -152,31 +153,33 @@ jobs:
           name: wheels
           path: dist/wheels
 
-      - name: Download superset-src assets
-        uses: actions/download-artifact@v4
-        with:
-          name: superset-src
-          path: superset-src
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller
-          
-          # Install all wheels
           pip install dist/wheels/*.whl
 
-      - name: Verify installation
+      - name: Verify installation + assets
         run: |
-          python -c "from pypasreportergui import __version__; print(f'Version: {__version__}')"
-          python -c "import superset; print(f'Superset loaded')"
+          python -c "from pypasreportergui import __version__; print(f'App Version: {__version__}')"
+          python - <<'PY'
+          import superset
+          from pathlib import Path
+          p = Path(superset.__file__).resolve().parent
+          print("Superset dir:", p)
+          static_assets = p / "static" / "assets"
+          templates = p / "templates"
+          if not static_assets.exists():
+            raise SystemExit(f"ERROR: Missing Superset static assets at: {static_assets}")
+          if not templates.exists():
+            raise SystemExit(f"ERROR: Missing Superset templates at: {templates}")
+          print("OK: Superset assets present.")
+          PY
 
       - name: Build executable
         run: |
           mkdir -p dist/exe
           pyinstaller --clean --noconfirm tools/build_exe.spec
-          
-          # Move to dist/exe
           if [[ -d "dist/pyPASreporterGUI" ]]; then
             mv dist/pyPASreporterGUI dist/exe/
           fi
@@ -194,20 +197,12 @@ jobs:
           path: dist/exe/pyPASreporterGUI-linux-x64.tar.gz
           retention-days: 7
 
-  # =============================================================================
-  # Build Windows Executable (DISABLED - troubleshooting Linux first)
-  # =============================================================================
-  # build-windows-exe:
-  #   name: Build Windows Executable
-  #   runs-on: windows-latest
-  #   needs: build-superset
-  #   if: false  # Disabled for now
   build-windows-exe:
     name: Build Windows Executable
     runs-on: windows-latest
     needs: build-superset
-    if: false  # DISABLED - troubleshooting Linux first
-    
+    if: false
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -223,34 +218,35 @@ jobs:
           name: wheels
           path: dist/wheels
 
-      - name: Download superset-src assets
-        uses: actions/download-artifact@v4
-        with:
-          name: superset-src
-          path: superset-src
-
       - name: Install dependencies
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller
-          
-          # Install all wheels
           Get-ChildItem dist/wheels/*.whl | ForEach-Object { pip install $_.FullName }
 
-      - name: Verify installation
+      - name: Verify installation + assets
         shell: pwsh
         run: |
-          python -c "from pypasreportergui import __version__; print(f'Version: {__version__}')"
-          python -c "import superset; print('Superset loaded')"
+          python -c "from pypasreportergui import __version__; print(f'App Version: {__version__}')"
+          python - <<'PY'
+          import superset
+          from pathlib import Path
+          p = Path(superset.__file__).resolve().parent
+          static_assets = p / "static" / "assets"
+          templates = p / "templates"
+          if not static_assets.exists():
+            raise SystemExit(f"ERROR: Missing Superset static assets at: {static_assets}")
+          if not templates.exists():
+            raise SystemExit(f"ERROR: Missing Superset templates at: {templates}")
+          print("OK: Superset assets present.")
+          PY
 
       - name: Build executable
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist/exe
+          New-Item -ItemType Directory -Force -Path dist/exe | Out-Null
           pyinstaller --clean --noconfirm tools/build_exe.spec
-          
-          # Move to dist/exe
           if (Test-Path "dist/pyPASreporterGUI") {
             Move-Item -Force dist/pyPASreporterGUI dist/exe/
           }
@@ -269,15 +265,12 @@ jobs:
           path: dist/exe/pyPASreporterGUI-windows-x64.zip
           retention-days: 7
 
-  # =============================================================================
-  # Create GitHub Release
-  # =============================================================================
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-superset, build-linux-exe]  # Removed build-windows-exe for now
+    needs: [build-superset, build-linux-exe]
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -290,15 +283,8 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release-assets
-          
-          # Copy wheels
           cp artifacts/wheels/*.whl release-assets/ || true
-          
-          # Copy executables
           cp artifacts/linux-executable/*.tar.gz release-assets/ || true
-          # cp artifacts/windows-executable/*.zip release-assets/ || true  # Disabled
-          
-          echo "=== Release Assets ==="
           ls -la release-assets/
 
       - name: Determine release tag
@@ -313,7 +299,6 @@ jobs:
             fi
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Release tag: $TAG"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -322,30 +307,15 @@ jobs:
           name: "pyPASreporterGUI ${{ steps.release_tag.outputs.tag }}"
           body: |
             ## pyPASreporterGUI Release ${{ steps.release_tag.outputs.tag }}
-            
+
             ### Downloads
-            
-            | Platform | File | Description |
-            |----------|------|-------------|
-            | All | `*.whl` | Python wheel packages |
-            | Linux | `pyPASreporterGUI-linux-x64.tar.gz` | Standalone Linux executable |
-            | Windows | `pyPASreporterGUI-windows-x64.zip` | Standalone Windows executable |
-            
-            ### Installation
-            
-            **From wheels:**
-            ```bash
-            pip install pyPASreporterGUI-*.whl apache_superset-*.whl
-            pypasreportergui run
-            ```
-            
-            **Standalone executables:**
-            - Extract the archive
-            - Run `pyPASreporterGUI` (Linux) or `pyPASreporterGUI.exe` (Windows)
-            
+            - Wheels: `*.whl`
+            - Linux: `pyPASreporterGUI-linux-x64.tar.gz`
+
             ### Build Info
             - Python: ${{ env.PYTHON_VERSION }}
             - Node.js: ${{ env.NODE_VERSION }}
+            - npm: ${{ env.NPM_VERSION }}
             - Superset: ${{ needs.build-superset.outputs.superset_version }}
             - App Version: ${{ needs.build-superset.outputs.app_version }}
           files: release-assets/*
