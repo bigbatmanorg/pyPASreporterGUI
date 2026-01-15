@@ -272,6 +272,18 @@ def doctor() -> None:
         console.print(f"[red]✗[/red] DuckDB engine test failed: {e}")
         all_ok = False
 
+    # Check SQLAlchemy dialect entry points
+    try:
+        from importlib.metadata import entry_points
+        eps = entry_points(group='sqlalchemy.dialects')
+        duckdb_eps = [ep.name for ep in eps if 'duck' in ep.name.lower()]
+        if duckdb_eps:
+            console.print(f"[green]✓[/green] DuckDB SQLAlchemy dialect registered: {duckdb_eps}")
+        else:
+            console.print(f"[yellow]![/yellow] DuckDB dialect not in entry_points (found: {[ep.name for ep in list(eps)[:5]]}...)")
+    except Exception as e:
+        console.print(f"[yellow]![/yellow] Could not check entry_points: {e}")
+
     # Check branding module
     try:
         from pypasreportergui.branding.blueprint import branding_bp

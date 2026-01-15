@@ -15,28 +15,17 @@ def _patch_metadata():
     if not hasattr(sys, '_MEIPASS'):
         return
 
-    # Add MEIPASS to the metadata search path
     meipass = sys._MEIPASS
 
-    try:
-        # Python 3.9+ has importlib.metadata built-in
-        import importlib.metadata as metadata
+    # Method 1: Add MEIPASS to sys.path immediately
+    if meipass not in sys.path:
+        sys.path.insert(0, meipass)
 
-        # Get the original distributions function
-        original_distributions = metadata.distributions
-
-        def patched_distributions(**kwargs):
-            """Patched distributions() that includes MEIPASS in search path."""
-            # Add MEIPASS to path if not already there
-            if meipass not in sys.path:
-                sys.path.insert(0, meipass)
-            return original_distributions(**kwargs)
-
-        metadata.distributions = patched_distributions
-
-    except ImportError:
-        pass
+    # Method 2: Set PYTHONPATH to include MEIPASS for subprocess calls
+    existing_path = os.environ.get('PYTHONPATH', '')
+    if meipass not in existing_path:
+        os.environ['PYTHONPATH'] = meipass + os.pathsep + existing_path if existing_path else meipass
 
 
-# Run the patch immediately when this hook is loaded
+# Run the patch immediately when this hook is loaded (before any other imports)
 _patch_metadata()
