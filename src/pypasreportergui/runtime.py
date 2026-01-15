@@ -611,8 +611,16 @@ def run_superset_command(args: list[str], check: bool = True) -> subprocess.Comp
         return _run_superset_command_frozen(args, check)
     else:
         # Normal Python execution - use subprocess
-        cmd = [sys.executable, "-m", "superset.cli.main"] + args
-        print(f"+ {' '.join(cmd)}")
+        # Note: We use -c to explicitly call the superset() CLI function because
+        # superset.cli.main has no if __name__ == "__main__" guard, so running it
+        # as -m superset.cli.main would just load the module without invoking the CLI.
+        args_str = " ".join(f"'{a}'" if " " in a else a for a in args)
+        cmd = [
+            sys.executable,
+            "-c",
+            f"import sys; sys.argv = ['superset'] + {args!r}; from superset.cli.main import superset; superset()",
+        ]
+        print(f"+ {sys.executable} -m superset.cli.main {args_str}")
         return subprocess.run(cmd, check=check)
 
 
