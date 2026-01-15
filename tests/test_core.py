@@ -87,6 +87,17 @@ class TestRuntime:
         assert "pyPASreporterGUI" in content
         assert "SECRET_KEY" in content
         assert "SQLALCHEMY_DATABASE_URI" in content
+        assert "ENABLE_EXTENSIONS" in content
+        assert "EXTENSIONS_PATH" in content
+
+    def test_ensure_extensions_dir(self, tmp_path):
+        """Test that extensions directory is created."""
+        from pypasreportergui.runtime import ensure_extensions_dir
+
+        extensions_dir = ensure_extensions_dir(tmp_path)
+
+        assert extensions_dir.exists()
+        assert extensions_dir.is_dir()
 
     def test_config_not_regenerated(self, tmp_path):
         """Test that config is not regenerated if it exists."""

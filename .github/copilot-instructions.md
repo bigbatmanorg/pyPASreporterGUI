@@ -81,6 +81,12 @@ These require Redis/Celery and are explicitly disabled in config:
 - `SCHEDULED_QUERIES: False` - Async query scheduling
 - `SQLLAB_ASYNC_TIME_LIMIT_SEC = 0` - Async SQL Lab queries
 
+## Extensions Support (.supx)
+- **Extensions directory**: `~/.pypasreportergui/supx/` (auto-created on init/run)
+- **Detection**: `detect_superset_extensions_support()` checks if pinned Superset has extension runtime signals
+- **CLI**: `pypasreportergui extensions status` shows support state and bundle counts
+- **CSP**: Talisman enabled with relaxed CSP (`'unsafe-eval'`, `'unsafe-inline'`) for Module Federation
+
 ## Build Outputs
 | Output | Location |
 |--------|----------|
