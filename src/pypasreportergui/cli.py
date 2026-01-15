@@ -32,7 +32,8 @@ app = typer.Typer(
     help="pyPASreporterGUI - A branded Superset-based data analytics GUI",
     add_completion=False,
 )
-console = Console()
+# Force UTF-8 encoding for Windows compatibility
+console = Console(force_terminal=True, legacy_windows=False)
 
 
 def version_callback(value: bool) -> None:
@@ -87,7 +88,7 @@ def run(
         init_database()
         create_admin_user()
 
-    console.print(f"[green]✓[/green] Server starting at [link]http://{host}:{port}[/link]")
+    console.print(f"[green]+[/green] Server starting at [link]http://{host}:{port}[/link]")
     console.print(f"[dim]Config: {config_path}[/dim]")
     console.print(f"[dim]Home: {home_dir}[/dim]")
     console.print("[dim]Press Ctrl+C to stop[/dim]")
@@ -125,7 +126,7 @@ def init(
         email=admin_email,
     )
 
-    console.print(f"[green]✓[/green] {__app_name__} initialized successfully!")
+    console.print(f"[green]+[/green] {__app_name__} initialized successfully!")
     console.print(f"[dim]Config: {config_path}[/dim]")
     console.print(f"[dim]Database: {home_dir / 'superset.db'}[/dim]")
 
@@ -202,17 +203,17 @@ def doctor() -> None:
     path_table.add_row(
         "PYPASREPORTERGUI_HOME",
         str(home_dir),
-        "[green]✓ exists[/green]" if home_dir.exists() else "[yellow]○ will be created[/yellow]",
+        "[green]+ exists[/green]" if home_dir.exists() else "[yellow]- will be created[/yellow]",
     )
     path_table.add_row(
         "Config file",
         str(config_path),
-        "[green]✓ exists[/green]" if config_path.exists() else "[yellow]○ will be generated[/yellow]",
+        "[green]+ exists[/green]" if config_path.exists() else "[yellow]- will be generated[/yellow]",
     )
     path_table.add_row(
         "SQLite database",
         str(db_path),
-        "[green]✓ exists[/green]" if db_path.exists() else "[yellow]○ will be created[/yellow]",
+        "[green]+ exists[/green]" if db_path.exists() else "[yellow]- will be created[/yellow]",
     )
 
     console.print(path_table)
@@ -235,11 +236,11 @@ def doctor() -> None:
             if path.exists():
                 if path.is_dir():
                     count = len(list(path.iterdir()))
-                    console.print(f"[green]✓[/green] {name}: {path} ({count} items)")
+                    console.print(f"[green]+[/green] {name}: {path} ({count} items)")
                 else:
-                    console.print(f"[green]✓[/green] {name}: {path}")
+                    console.print(f"[green]+[/green] {name}: {path}")
             else:
-                console.print(f"[red]✗[/red] {name}: {path} [red]MISSING[/red]")
+                console.print(f"[red]x[/red] {name}: {path} [red]MISSING[/red]")
                 all_ok = False
         console.print()
 
@@ -250,9 +251,9 @@ def doctor() -> None:
     try:
         from superset.app import create_app
 
-        console.print("[green]✓[/green] Superset app factory available")
+        console.print("[green]+[/green] Superset app factory available")
     except ImportError as e:
-        console.print(f"[red]✗[/red] Superset import failed: {e}")
+        console.print(f"[red]x[/red] Superset import failed: {e}")
         all_ok = False
 
     # Check DuckDB engine
@@ -264,12 +265,12 @@ def doctor() -> None:
             result = conn.execute("SELECT 42 as answer")
             row = result.fetchone()
             if row and row[0] == 42:
-                console.print("[green]✓[/green] DuckDB engine working")
+                console.print("[green]+[/green] DuckDB engine working")
             else:
-                console.print("[red]✗[/red] DuckDB engine returned unexpected result")
+                console.print("[red]x[/red] DuckDB engine returned unexpected result")
                 all_ok = False
     except Exception as e:
-        console.print(f"[red]✗[/red] DuckDB engine test failed: {e}")
+        console.print(f"[red]x[/red] DuckDB engine test failed: {e}")
         all_ok = False
 
     # Check SQLAlchemy dialect entry points
@@ -278,7 +279,7 @@ def doctor() -> None:
         eps = entry_points(group='sqlalchemy.dialects')
         duckdb_eps = [ep.name for ep in eps if 'duck' in ep.name.lower()]
         if duckdb_eps:
-            console.print(f"[green]✓[/green] DuckDB SQLAlchemy dialect registered: {duckdb_eps}")
+            console.print(f"[green]+[/green] DuckDB SQLAlchemy dialect registered: {duckdb_eps}")
         else:
             console.print(f"[yellow]![/yellow] DuckDB dialect not in entry_points (found: {[ep.name for ep in list(eps)[:5]]}...)")
             all_ok = False
@@ -290,9 +291,9 @@ def doctor() -> None:
     try:
         from pypasreportergui.branding.blueprint import branding_bp
 
-        console.print("[green]✓[/green] Branding blueprint available")
+        console.print("[green]+[/green] Branding blueprint available")
     except ImportError as e:
-        console.print(f"[red]✗[/red] Branding blueprint import failed: {e}")
+        console.print(f"[red]x[/red] Branding blueprint import failed: {e}")
         all_ok = False
 
     console.print()
@@ -374,7 +375,7 @@ def add_duckdb(
                     )
                     db.session.add(database)
                     db.session.commit()
-                    console.print(f"[green]✓[/green] Database '{db_name}' added successfully!")
+                    console.print(f"[green]+[/green] Database '{db_name}' added successfully!")
         except Exception as e:
             console.print(f"[yellow]Could not add programmatically: {e}[/yellow]")
             console.print("[dim]Please add manually using the steps above.[/dim]")
