@@ -59,6 +59,12 @@ fab_static = fab_dir / "static"
 if fab_static.exists():
     datas.append((str(fab_static), "flask_appbuilder/static"))
 
+# Add package metadata for SQLAlchemy dialect entry points
+# This is required for Superset to detect available database drivers
+from PyInstaller.utils.hooks import copy_metadata
+datas += copy_metadata("duckdb-engine")
+datas += copy_metadata("sqlalchemy")
+
 # Hidden imports that PyInstaller might miss
 hiddenimports = [
     # Core app
