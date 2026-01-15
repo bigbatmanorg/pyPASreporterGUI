@@ -65,6 +65,9 @@ from PyInstaller.utils.hooks import copy_metadata
 datas += copy_metadata("duckdb-engine")
 datas += copy_metadata("sqlalchemy")
 
+# Runtime hooks directory
+HOOKS_DIR = ROOT / "tools"
+
 # Hidden imports that PyInstaller might miss
 hiddenimports = [
     # Core app
@@ -215,7 +218,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(HOOKS_DIR / "pyi_rth_metadata.py")],
     excludes=[
         "matplotlib",
         "tkinter",
