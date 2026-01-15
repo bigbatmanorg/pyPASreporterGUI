@@ -358,6 +358,8 @@ def patch_static_folder(app) -> None:
     In PyInstaller builds, Flask's default folder resolution doesn't work
     because __name__ resolves to the wrong location. We must explicitly set
     the static_folder and template_folder to point to the bundled Superset files.
+    
+    Also patches the UIManifestProcessor to find manifest.json in the correct location.
     """
     if not is_frozen():
         return
@@ -374,11 +376,21 @@ def patch_static_folder(app) -> None:
     app.template_folder = correct_template_dir
     print(f"[frozen] Patched app.template_folder to: {correct_template_dir}")
     
+    # Patch the UIManifestProcessor to find manifest.json
+    # This is initialized at module load time with the wrong APP_DIR
+    from superset.extensions import manifest_processor
+    correct_manifest_file = str(frozen_superset_dir / "static" / "assets" / "manifest.json")
+    manifest_processor.manifest_file = correct_manifest_file
+    manifest_processor.parse_manifest_json()
+    print(f"[frozen] Patched manifest_processor.manifest_file to: {correct_manifest_file}")
+    
     # Verify folders exist
     if not Path(correct_static_dir).exists():
         print(f"WARNING: Static folder not found at: {correct_static_dir}")
     if not Path(correct_template_dir).exists():
         print(f"WARNING: Template folder not found at: {correct_template_dir}")
+    if not Path(correct_manifest_file).exists():
+        print(f"WARNING: Manifest file not found at: {correct_manifest_file}")
 
 
 # Global cached app for frozen mode to avoid re-initialization issues
