@@ -33,6 +33,7 @@ dependencies = [
     "rich>=13.0.0",
     "duckdb>=0.10.0",
     "duckdb-engine>=0.10.0",
+    "sqlparse>=0.4.4",
 ]
 
 [project.optional-dependencies]

@@ -393,6 +393,62 @@ def patch_static_folder(app) -> None:
         print(f"WARNING: Manifest file not found at: {correct_manifest_file}")
 
 
+_duckdb_engine_patched = False
+
+
+def ensure_duckdb_engine_available() -> None:
+    """Guarantee DuckDB shows up as an available engine in frozen builds."""
+    global _duckdb_engine_patched
+
+    if _duckdb_engine_patched:
+        return
+
+    try:
+        import duckdb_engine  # noqa: F401  # verify dependency is bundled
+    except Exception as exc:  # pragma: no cover - informational only
+        print(f"[warning] DuckDB engine not importable: {exc}")
+        return
+
+    try:
+        from sqlalchemy.dialects import registry as sqla_registry
+
+        # Ensure the duckdb dialect is registered even if entry points are missed
+        try:
+            sqla_registry.load("duckdb")
+        except Exception:
+            sqla_registry.register("duckdb", "duckdb_engine", "Dialect")
+    except Exception as exc:  # pragma: no cover - best effort logging
+        print(f"[warning] Could not register DuckDB dialect with SQLAlchemy: {exc}")
+
+    try:
+        import superset.db_engine_specs as engine_specs
+        from superset.db_engine_specs.duckdb import DuckDBEngineSpec
+    except Exception as exc:  # pragma: no cover - best effort logging
+        print(f"[warning] Could not patch Superset engine specs for DuckDB: {exc}")
+        return
+
+    original_get_available = engine_specs.get_available_engine_specs
+    if getattr(original_get_available, "_pypas_duckdb_patched", False):
+        _duckdb_engine_patched = True
+        return
+
+    def _patched_get_available_engine_specs():
+        engines = original_get_available()
+        try:
+            drivers = engines.get(DuckDBEngineSpec)
+            if drivers is None:
+                engines[DuckDBEngineSpec] = {"duckdb"}
+            else:
+                drivers.add("duckdb")
+        except Exception as exc:  # pragma: no cover - diagnostic only
+            print(f"[warning] Could not ensure DuckDB availability: {exc}")
+        return engines
+
+    _patched_get_available_engine_specs._pypas_duckdb_patched = True
+    engine_specs.get_available_engine_specs = _patched_get_available_engine_specs
+    _duckdb_engine_patched = True
+
+
 # Global cached app for frozen mode to avoid re-initialization issues
 _frozen_app = None
 
@@ -410,6 +466,7 @@ def get_frozen_app():
     
     # CRITICAL: Patch Superset paths before importing create_app
     patch_superset_paths_for_frozen()
+    ensure_duckdb_engine_available()
     
     from superset.app import create_app
     

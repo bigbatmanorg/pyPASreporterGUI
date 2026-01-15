@@ -281,8 +281,10 @@ def doctor() -> None:
             console.print(f"[green]✓[/green] DuckDB SQLAlchemy dialect registered: {duckdb_eps}")
         else:
             console.print(f"[yellow]![/yellow] DuckDB dialect not in entry_points (found: {[ep.name for ep in list(eps)[:5]]}...)")
+            all_ok = False
     except Exception as e:
         console.print(f"[yellow]![/yellow] Could not check entry_points: {e}")
+        all_ok = False
 
     # Check branding module
     try:
