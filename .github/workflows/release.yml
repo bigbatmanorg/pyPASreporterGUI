@@ -257,7 +257,6 @@ jobs:
     name: Build Windows Executable
     runs-on: windows-latest
     needs: build-superset
-    if: false
 
     steps:
       - name: Checkout repository
@@ -306,6 +305,35 @@ jobs:
           if (Test-Path "dist/pyPASreporterGUI") {
             Move-Item -Force dist/pyPASreporterGUI dist/exe/
           }
+
+      - name: Verify bundled assets and doctor
+        shell: pwsh
+        run: |
+          $exe = "dist/exe/pyPASreporterGUI/pyPASreporterGUI.exe"
+          if (-not (Test-Path $exe)) { throw "Executable not found at $exe" }
+
+          $migrations = "dist/exe/pyPASreporterGUI/_internal/superset/migrations/versions"
+          $staticDir = "dist/exe/pyPASreporterGUI/_internal/superset/static"
+          $templates = "dist/exe/pyPASreporterGUI/_internal/superset/templates"
+
+          $migrationCount = (Get-ChildItem -Path $migrations -Filter *.py -Recurse | Measure-Object).Count
+          if ($migrationCount -lt 300) { throw "Too few migrations bundled ($migrationCount)" }
+          if (-not (Test-Path $staticDir)) { throw "Static assets missing" }
+          if (-not (Test-Path $templates)) { throw "Templates missing" }
+
+          & $exe doctor
+
+      - name: Smoke test - init command
+        shell: pwsh
+        run: |
+          $exe = "dist/exe/pyPASreporterGUI/pyPASreporterGUI.exe"
+          $tempHome = Join-Path $env:TEMP ("pprg_home_" + [guid]::NewGuid().ToString())
+          New-Item -ItemType Directory -Force -Path $tempHome | Out-Null
+          $env:HOME = $tempHome
+          Write-Host "Using temporary HOME: $env:HOME"
+          & $exe init
+          if (-not (Test-Path (Join-Path $env:HOME ".pypasreportergui/superset.db"))) { throw "Database not created" }
+          if (-not (Test-Path (Join-Path $env:HOME ".pypasreportergui/superset_config.py"))) { throw "Config not created" }
 
       - name: Create zip
         shell: pwsh
