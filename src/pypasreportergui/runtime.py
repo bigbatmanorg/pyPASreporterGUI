@@ -84,7 +84,11 @@ def generate_config(home_dir: Path, force: bool = False) -> Path:
 # Version: {__version__}
 
 import os
+import warnings
 from pathlib import Path
+
+# Suppress LocalProxy SQLAlchemy warning (known Flask-AppBuilder issue)
+warnings.filterwarnings("ignore", message=".*LocalProxy.*is not mapped.*")
 
 # =============================================================================
 # Application Identity
@@ -170,6 +174,21 @@ WTF_CSRF_ENABLED = True
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = False  # Set True if using HTTPS
 TALISMAN_ENABLED = False  # Disable for local development
+CONTENT_SECURITY_POLICY_WARNING = False  # Suppress CSP warning for standalone mode
+
+# =============================================================================
+# Authentication Configuration
+# =============================================================================
+from flask_appbuilder.security.manager import AUTH_DB
+
+AUTH_TYPE = AUTH_DB  # Use database authentication
+AUTH_USER_REGISTRATION = False  # Disable self-registration
+
+# =============================================================================
+# Rate Limiting (Disabled - requires Redis in standard mode)
+# =============================================================================
+RATELIMIT_ENABLED = False
+RATELIMIT_STORAGE_URI = "memory://"
 
 # =============================================================================
 # SQL Lab Configuration

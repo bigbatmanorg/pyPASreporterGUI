@@ -49,6 +49,16 @@ if SUPERSET_DIR:
     if superset_translations.exists():
         datas.append((str(superset_translations), "superset/translations"))
 
+# Add Flask-AppBuilder templates (required for login/security pages)
+import flask_appbuilder
+fab_dir = Path(flask_appbuilder.__file__).parent
+fab_templates = fab_dir / "templates"
+if fab_templates.exists():
+    datas.append((str(fab_templates), "flask_appbuilder/templates"))
+fab_static = fab_dir / "static"
+if fab_static.exists():
+    datas.append((str(fab_static), "flask_appbuilder/static"))
+
 # Hidden imports that PyInstaller might miss
 hiddenimports = [
     # Core app
