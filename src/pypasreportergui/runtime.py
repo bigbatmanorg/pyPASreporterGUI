@@ -8,6 +8,7 @@ This module provides functions for:
 """
 from __future__ import annotations
 
+import importlib.util
 import os
 import secrets
 import subprocess
@@ -37,6 +38,18 @@ def ensure_home_dir() -> Path:
     return home_dir
 
 
+def get_extensions_path(home_dir: Path) -> Path:
+    """Return the Superset extensions directory path."""
+    return home_dir / "supx"
+
+
+def ensure_extensions_dir(home_dir: Path) -> Path:
+    """Ensure the extensions directory exists and return its path."""
+    extensions_dir = get_extensions_path(home_dir)
+    extensions_dir.mkdir(parents=True, exist_ok=True)
+    return extensions_dir
+
+
 def get_branding_static_dir() -> Path:
     """Get the path to branding static assets."""
     return Path(__file__).parent / "branding" / "static"
@@ -45,6 +58,71 @@ def get_branding_static_dir() -> Path:
 def generate_secret_key() -> str:
     """Generate a random secret key for Flask."""
     return secrets.token_hex(32)
+
+
+def _find_repo_root() -> Optional[Path]:
+    """Find the repo root containing tools/detect_support.py."""
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "tools" / "detect_support.py").exists():
+            return parent
+    return None
+
+
+def get_pinned_superset_repo() -> Optional[Path]:
+    """Locate the pinned Superset checkout if present."""
+    env_path = os.environ.get("PYPASREPORTERGUI_SUPERSET_REPO")
+    if env_path:
+        repo_path = Path(env_path).expanduser().resolve()
+        if repo_path.exists():
+            return repo_path
+
+    candidates = [Path.cwd() / "superset-src"]
+    repo_root = _find_repo_root()
+    if repo_root:
+        candidates.append(repo_root / "superset-src")
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    return None
+
+
+def _load_detect_support(repo_root: Path) -> Optional[callable]:
+    """Load the detect_support function from tools/detect_support.py if available."""
+    script_path = repo_root / "tools" / "detect_support.py"
+    if not script_path.exists():
+        return None
+
+    spec = importlib.util.spec_from_file_location("pypasreportergui_detect_support", script_path)
+    if not spec or not spec.loader:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return getattr(module, "detect_support", None)
+
+
+def detect_superset_extensions_support(
+    repo_root: Optional[Path] = None,
+) -> tuple[Optional[bool], Optional[dict], Optional[str]]:
+    """Detect whether the pinned Superset checkout supports extensions."""
+    resolved_root = repo_root
+    if resolved_root is None:
+        resolved_root = _find_repo_root()
+    if resolved_root is None:
+        return None, None, "Superset repo root not found"
+
+    detect_support = _load_detect_support(resolved_root)
+    if detect_support is None:
+        return None, None, "detect_support.py not available"
+
+    superset_repo = get_pinned_superset_repo()
+    if superset_repo is None:
+        return None, None, "superset-src not found"
+
+    result = detect_support(superset_repo)
+    signals = result.get("signals", {})
+    supported = bool(signals.get("extensions_path")) and bool(signals.get("extension_registry"))
+    return supported, result, None
 
 
 def generate_config(home_dir: Path, force: bool = False) -> Path:
@@ -78,6 +156,10 @@ def generate_config(home_dir: Path, force: bool = False) -> Path:
     # Convert paths to forward slashes for cross-platform config (Python strings)
     home_dir_str = str(home_dir).replace("\\", "/")
     branding_static_str = str(branding_static).replace("\\", "/")
+    extensions_dir = ensure_extensions_dir(home_dir)
+    extensions_dir_str = str(extensions_dir).replace("\\", "/")
+    support_state, _, _ = detect_superset_extensions_support()
+    enable_extensions = support_state is not False
 
     config_content = f'''# pyPASreporterGUI Superset Configuration
 # Generated automatically - edit with care
@@ -119,9 +201,20 @@ FEATURE_FLAGS = {{
     "DASHBOARD_CROSS_FILTERS": True,
     "DASHBOARD_NATIVE_FILTERS_SET": True,
     "EMBEDDED_SUPERSET": True,
+    "ENABLE_EXTENSIONS": {str(enable_extensions)},
     # Disable features requiring Celery/Redis
     "ALERT_REPORTS": False,
     "SCHEDULED_QUERIES": False,
+}}
+
+# =============================================================================
+# Extensions Configuration
+# =============================================================================
+EXTENSIONS_PATH = "{extensions_dir_str}"
+
+FEATURE_FLAGS = {{
+    **FEATURE_FLAGS,
+    "ENABLE_EXTENSIONS": {str(enable_extensions)},
 }}
 
 # =============================================================================
@@ -173,8 +266,29 @@ SQLLAB_ASYNC_TIME_LIMIT_SEC = 0
 WTF_CSRF_ENABLED = True
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = False  # Set True if using HTTPS
-TALISMAN_ENABLED = False  # Disable for local development
+TALISMAN_ENABLED = True
 CONTENT_SECURITY_POLICY_WARNING = False  # Suppress CSP warning for standalone mode
+
+DEFAULT_TALISMAN_CONFIG = {{
+    "content_security_policy": {{
+        "default-src": ["'self'"],
+        "img-src": ["'self'", "data:", "blob:"],
+        "worker-src": ["'self'", "blob:"],
+        "connect-src": ["'self'", "http:", "https:", "ws:", "wss:"],
+        "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        "style-src": ["'self'", "'unsafe-inline'"],
+    }},
+}}
+
+TALISMAN_CONFIG = {{}}
+TALISMAN_CONFIG = {{
+    **DEFAULT_TALISMAN_CONFIG,
+    **TALISMAN_CONFIG,
+}}
+TALISMAN_CONFIG["content_security_policy"] = {{
+    **DEFAULT_TALISMAN_CONFIG["content_security_policy"],
+    **TALISMAN_CONFIG.get("content_security_policy", {{}}),
+}}
 
 # =============================================================================
 # Authentication Configuration

@@ -66,6 +66,7 @@ pypasreportergui run
 | `pypasreportergui init` | Initialize database + create admin user |
 | `pypasreportergui doctor` | Print version info and sanity checks |
 | `pypasreportergui add-duckdb` | Register a DuckDB database connection |
+| `pypasreportergui extensions status` | Check Superset extension support and bundle counts |
 
 ### Examples
 
@@ -159,6 +160,7 @@ pyPASreporterGUI stores its configuration in `~/.pypasreportergui/`:
 - [RELEASE.md](docs/RELEASE.md) - Release workflow
 - [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Common issues
 - [VERSION_MATRIX.md](docs/VERSION_MATRIX.md) - Pinned versions
+- [EXTENSIONS.md](docs/EXTENSIONS.md) - Superset extensions (.supx) support
 
 ---
 
