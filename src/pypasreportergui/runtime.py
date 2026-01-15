@@ -352,6 +352,35 @@ def patch_migrate_directory(app) -> None:
     print(f"[frozen] Patched migrate.directory to: {correct_migrations_dir}")
 
 
+def patch_static_folder(app) -> None:
+    """Patch Flask app's static and template folder paths for frozen builds.
+    
+    In PyInstaller builds, Flask's default folder resolution doesn't work
+    because __name__ resolves to the wrong location. We must explicitly set
+    the static_folder and template_folder to point to the bundled Superset files.
+    """
+    if not is_frozen():
+        return
+    
+    frozen_superset_dir = get_superset_dir()
+    correct_static_dir = str(frozen_superset_dir / "static")
+    correct_template_dir = str(frozen_superset_dir / "templates")
+    
+    # Patch the Flask app's static folder
+    app.static_folder = correct_static_dir
+    print(f"[frozen] Patched app.static_folder to: {correct_static_dir}")
+    
+    # Patch the Flask app's template folder
+    app.template_folder = correct_template_dir
+    print(f"[frozen] Patched app.template_folder to: {correct_template_dir}")
+    
+    # Verify folders exist
+    if not Path(correct_static_dir).exists():
+        print(f"WARNING: Static folder not found at: {correct_static_dir}")
+    if not Path(correct_template_dir).exists():
+        print(f"WARNING: Template folder not found at: {correct_template_dir}")
+
+
 # Global cached app for frozen mode to avoid re-initialization issues
 _frozen_app = None
 
@@ -376,6 +405,9 @@ def get_frozen_app():
     
     # CRITICAL: Patch migrate.directory AFTER app creation
     patch_migrate_directory(_frozen_app)
+    
+    # CRITICAL: Patch static folder path for frozen builds
+    patch_static_folder(_frozen_app)
     
     return _frozen_app
 
