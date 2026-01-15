@@ -353,7 +353,7 @@ jobs:
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-superset, build-linux-exe]
+    needs: [build-superset, build-linux-exe, build-windows-exe]
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
 
     steps:
@@ -370,6 +370,7 @@ jobs:
           mkdir -p release-assets
           cp artifacts/wheels/*.whl release-assets/ || true
           cp artifacts/linux-executable/*.tar.gz release-assets/ || true
+          cp artifacts/windows-executable/*.zip release-assets/ || true
           ls -la release-assets/
 
       - name: Determine release tag
@@ -396,6 +397,7 @@ jobs:
             ### Downloads
             - Wheels: `*.whl`
             - Linux: `pyPASreporterGUI-linux-x64.tar.gz`
+            - Windows: `pyPASreporterGUI-windows-x64.zip`
 
             ### Build Info
             - Python: ${{ env.PYTHON_VERSION }}
